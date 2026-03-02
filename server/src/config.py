@@ -167,7 +167,7 @@ class ServerConfig(BaseModel):
         min_length=1,
     )
     port: int = Field(
-        default=8080,
+        default=8310,
         ge=1,
         le=65535,
         description="Port exposed by the lifecycle API server.",

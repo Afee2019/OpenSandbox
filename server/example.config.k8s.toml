@@ -20,11 +20,11 @@
 # Usage:
 #   1. Copy this file to ~/.sandbox.toml (or set SANDBOX_CONFIG_PATH environment variable)
 #   2. Update the configuration values according to your environment
-#   3. Start the server: uvicorn src.main:app --host 0.0.0.0 --port 8080
+#   3. Start the server: uvicorn src.main:app --host 0.0.0.0 --port 8310
 
 [server]
 host = "0.0.0.0"
-port = 8080
+port = 8310
 log_level = "INFO"
 # api_key = "your-secret-api-key"  # Optional: Uncomment to enable API key authentication
 

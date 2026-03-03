@@ -149,7 +149,8 @@ async def list_sandboxes(
         from urllib.parse import parse_qsl
         try:
             # Parse query string format: key=value&key2=value2
-            parsed = parse_qsl(metadata)
+            # strict_parsing=True rejects malformed segments like "a=1&broken"
+            parsed = parse_qsl(metadata, keep_blank_values=True, strict_parsing=True)
             metadata_dict = dict(parsed)
         except Exception as e:
             from fastapi import HTTPException
@@ -475,6 +476,9 @@ async def proxy_sandbox_endpoint_request(request: Request, sandbox_id: str, port
             status_code=502,
             detail=f"Could not connect to the backend sandbox {endpoint}: {e}",
         )
+    except HTTPException:
+        # Preserve explicit HTTP exceptions raised above (e.g. websocket upgrade not supported).
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"An internal error occurred in the proxy: {e}"

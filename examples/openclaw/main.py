@@ -24,29 +24,29 @@ import requests
 
 def check_openclaw(sbx: SandboxSync) -> bool:
     """
-    Health check: poll openclaw until it returns 200.
+    健康检查：轮询 openclaw，直到返回 HTTP 200。
 
-    Returns:
-        True  when ready
-        False on timeout or any exception
+    返回值：
+        True  — 就绪
+        False — 超时或发生异常
     """
     try:
         endpoint = sbx.get_endpoint(18789)
         start = time.perf_counter()
         url = f"http://{endpoint.endpoint}"
-        for _ in range(150):  # max for ~30s
+        for _ in range(150):  # 最多等待约 30 秒
             try:
                 resp = requests.get(url, timeout=1)
                 if resp.status_code == 200:
                     elapsed = time.perf_counter() - start
-                    print(f"[check] sandbox ready after {elapsed:.1f}s")
+                    print(f"[检查] 沙箱就绪，耗时 {elapsed:.1f}s")
                     return True
-            except Exception as exc:
+            except Exception:
                 pass
             time.sleep(0.2)
         return False
     except Exception as exc:
-        print(f"[check] failed: {exc}")
+        print(f"[检查] 失败：{exc}")
         return False
 
 
@@ -56,7 +56,7 @@ def main() -> None:
     timeout_seconds = 3600  # 1 hour
     token = os.getenv("OPENCLAW_GATEWAY_TOKEN", "dummy-token-for-sandbox")
 
-    print(f"Creating openclaw sandbox with image={image} on OpenSandbox server {server}...")
+    print(f"正在创建 openclaw 沙箱，镜像={image}，OpenSandbox Server={server}...")
     sandbox = SandboxSync.create(
         image=image,
         timeout=timedelta(seconds=timeout_seconds),
@@ -76,7 +76,7 @@ def main() -> None:
     )
 
     endpoint = sandbox.get_endpoint(18789)
-    print(f"Openclaw started finished. Please refer to {endpoint.endpoint}")
+    print(f"openclaw 已启动。访问地址：{endpoint.endpoint}")
 
 if __name__ == "__main__":
     main()

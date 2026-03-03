@@ -44,7 +44,7 @@ async def main() -> None:
     async with sandbox:
         interpreter = await CodeInterpreter.create(sandbox=sandbox)
 
-        # Python example: show runtime info and return a simple calculation.
+        # Python 示例：输出运行时信息并返回简单计算结果
         py_exec = await interpreter.codes.run(
             "import platform\n"
             "print('Hello from Python!')\n"
@@ -52,14 +52,14 @@ async def main() -> None:
             "result",
             language=SupportedLanguage.PYTHON,
         )
-        print("\n=== Python example ===")
+        print("\n=== Python 示例 ===")
         for msg in py_exec.logs.stdout:
-            print(f"[Python stdout] {msg.text}")
+            print(f"[Python 输出] {msg.text}")
         if py_exec.result:
             for res in py_exec.result:
-                print(f"[Python result] {res.text}")
+                print(f"[Python 返回值] {res.text}")
 
-        # Java example: print to stdout and return the final result line.
+        # Java 示例：打印到标准输出并返回计算结果
         java_exec = await interpreter.codes.run(
             "System.out.println(\"Hello from Java!\");\n"
             "int result = 2 + 3;\n"
@@ -67,16 +67,16 @@ async def main() -> None:
             "result",
             language=SupportedLanguage.JAVA,
         )
-        print("\n=== Java example ===")
+        print("\n=== Java 示例 ===")
         for msg in java_exec.logs.stdout:
-            print(f"[Java stdout] {msg.text}")
+            print(f"[Java 输出] {msg.text}")
         if java_exec.result:
             for res in java_exec.result:
-                print(f"[Java result] {res.text}")
+                print(f"[Java 返回值] {res.text}")
         if java_exec.error:
-            print(f"[Java error] {java_exec.error.name}: {java_exec.error.value}")
+            print(f"[Java 错误] {java_exec.error.name}: {java_exec.error.value}")
 
-        # Go example: print logs and demonstrate a main function structure.
+        # Go 示例：演示 main 函数结构并打印日志
         go_exec = await interpreter.codes.run(
             "package main\n"
             "import \"fmt\"\n"
@@ -87,24 +87,24 @@ async def main() -> None:
             "}",
             language=SupportedLanguage.GO,
         )
-        print("\n=== Go example ===")
+        print("\n=== Go 示例 ===")
         for msg in go_exec.logs.stdout:
-            print(f"[Go stdout] {msg.text}")
+            print(f"[Go 输出] {msg.text}")
         if go_exec.error:
-            print(f"[Go error] {go_exec.error.name}: {go_exec.error.value}")
+            print(f"[Go 错误] {go_exec.error.name}: {go_exec.error.value}")
 
-        # TypeScript example: use typing and sum an array.
+        # TypeScript 示例：使用类型声明并对数组求和
         ts_exec = await interpreter.codes.run(
             "console.log('Hello from TypeScript!');\n"
             "const nums: number[] = [1, 2, 3];\n"
             "console.log('sum =', nums.reduce((a, b) => a + b, 0));",
             language=SupportedLanguage.TYPESCRIPT,
         )
-        print("\n=== TypeScript example ===")
+        print("\n=== TypeScript 示例 ===")
         for msg in ts_exec.logs.stdout:
-            print(f"[TypeScript stdout] {msg.text}")
+            print(f"[TypeScript 输出] {msg.text}")
         if ts_exec.error:
-            print(f"[TypeScript error] {ts_exec.error.name}: {ts_exec.error.value}")
+            print(f"[TypeScript 错误] {ts_exec.error.name}: {ts_exec.error.value}")
 
         await sandbox.kill()
 

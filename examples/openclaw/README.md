@@ -1,29 +1,29 @@
-# OpenClaw Gateway Example
+# OpenClaw Gateway 示例
 
-Launch an [OpenClaw](https://github.com/openclaw/openclaw) Gateway inside an OpenSandbox instance and expose its HTTP endpoint. The script polls the gateway until it returns HTTP 200, then prints the reachable endpoint.
+在 OpenSandbox 沙箱实例中启动 [OpenClaw](https://github.com/openclaw/openclaw) Gateway，并暴露 HTTP 访问端点。脚本会轮询 Gateway，直到返回 HTTP 200，然后打印可访问地址。
 
-## Start OpenSandbox server [local]
+## 启动 OpenSandbox Server（本地）
 
-You can find the latest OpenClaw container image [here](https://github.com/openclaw/openclaw/pkgs/container/openclaw).
+最新 OpenClaw 镜像可在这里查看：[OpenClaw Container Registry](https://github.com/openclaw/openclaw/pkgs/container/openclaw)。
 
-### Notes (Docker runtime requirement)
+### 注意事项（Docker 运行时要求）
 
-The server uses `runtime.type = "docker"` by default, so it **must** be able to reach a running Docker daemon.
+默认情况下，OpenSandbox Server 使用 `runtime.type = "docker"`，因此 **必须** 能访问可用的 Docker daemon。
 
-- **Docker Desktop**: ensure Docker Desktop is running, then verify with `docker version`.
-- **Colima (macOS)**: start it first (`colima start`) and export the socket before starting the server:
+- **Docker Desktop**：确保已启动，然后执行 `docker version` 验证。
+- **Colima（macOS）**：先启动 (`colima start`)，再在启动 server 前导出 socket：
 
 ```shell
 export DOCKER_HOST="unix://${HOME}/.colima/default/docker.sock"
 ```
 
-Pre-pull the OpenClaw image:
+预拉取 OpenClaw 镜像：
 
 ```shell
 docker pull ghcr.io/openclaw/openclaw:latest
 ```
 
-Start the OpenSandbox server (logs will stay in the terminal):
+启动 OpenSandbox Server（日志会持续输出在当前终端）：
 
 ```shell
 uv pip install opensandbox-server
@@ -31,31 +31,32 @@ opensandbox-server init-config ~/.sandbox.toml --example docker
 opensandbox-server
 ```
 
-If you see errors like `FileNotFoundError: [Errno 2] No such file or directory` from `docker/transport/unixconn.py`, it usually means the Docker unix socket is missing or Docker is not running.
+如果出现 `docker/transport/unixconn.py` 的 `FileNotFoundError: [Errno 2] No such file or directory`，通常表示 Docker unix socket 不存在或 Docker 未启动。
 
-## Create and Access the OpenClaw Sandbox
+## 创建并访问 OpenClaw Sandbox
 
-This example is hard-coded for a quick start:
-- OpenSandbox server: `http://localhost:8080`
-- Image: `ghcr.io/openclaw/openclaw:latest`
-- Gateway port: `18789`
-- Timeout: `3600s`
-- Token: `OPENCLAW_GATEWAY_TOKEN` (default: `dummy-token-for-sandbox`)
+该示例为快速体验预置了以下参数：
 
-Install dependencies from the project root:
+- OpenSandbox Server：`http://localhost:8080`
+- 镜像：`ghcr.io/openclaw/openclaw:latest`
+- Gateway 端口：`18789`
+- 超时时间：`3600s`
+- Token：`OPENCLAW_GATEWAY_TOKEN`（默认：`dummy-token-for-sandbox`）
+
+在项目根目录安装依赖：
 
 ```shell
 uv pip install opensandbox requests
 ```
 
-Run the example (set a real token if you need authenticated access):
+运行示例（如需鉴权访问请设置真实 token）：
 
 ```shell
 export OPENCLAW_GATEWAY_TOKEN="$(openssl rand -hex 32)"
 uv run python examples/openclaw/main.py
 ```
 
-You should see output similar to:
+预期输出类似：
 
 ```text
 Creating openclaw sandbox with image=ghcr.io/openclaw/openclaw:latest on OpenSandbox server http://localhost:8080...
@@ -63,8 +64,9 @@ Creating openclaw sandbox with image=ghcr.io/openclaw/openclaw:latest on OpenSan
 Openclaw started finished. Please refer to 127.0.0.1:56123
 ```
 
-The endpoint printed at the end (e.g., `127.0.0.1:56123`) is the OpenClaw Gateway address exposed from the sandbox.
+最后打印的地址（如 `127.0.0.1:56123`）就是沙箱中 OpenClaw Gateway 的可访问端点。
 
-## References
+## 参考
+
 - [OpenClaw](https://github.com/openclaw/openclaw)
 - [OpenSandbox Python SDK](https://pypi.org/project/opensandbox/)

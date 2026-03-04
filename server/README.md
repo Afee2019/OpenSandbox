@@ -10,7 +10,7 @@ A production-grade, FastAPI-based service for managing the lifecycle of containe
 - **Lifecycle APIs**: Standardized REST interfaces for create, start, pause, resume, delete
 - **Pluggable runtimes**:
   - **Docker**: Production-ready
-  - **Kubernetes**: Supported (see `kubernetes/` for deployment)
+  - **Kubernetes**: Production-ready (see `kubernetes/` for deployment)
 - **Automatic expiration**: Configurable TTL with renewal
 - **Access control**: API Key authentication (`OPEN-SANDBOX-API-KEY`); can be disabled for local/dev
 - **Networking modes**:
@@ -33,7 +33,7 @@ A production-grade, FastAPI-based service for managing the lifecycle of containe
 - **Package Manager**: [uv](https://github.com/astral-sh/uv) (recommended) or pip
 - **Runtime Backend**:
   - Docker Engine 20.10+ (for Docker runtime)
-  - Kubernetes 1.21+ (for Kubernetes runtime)
+  - Kubernetes 1.21.1+ (for Kubernetes runtime)
 - **Operating System**: Linux, macOS, or Windows with WSL2
 
 ## Quick Start
@@ -113,6 +113,37 @@ Before you start the server, edit the configuration file to suit your environmen
    network_mode = "bridge"  # Isolated container networking
    ```
 
+**Docker Compose deployment (server runs in a container)**
+
+When `opensandbox-server` itself runs inside Docker Compose and manages sandboxes via
+mounted `/var/run/docker.sock`, configure a reachable host value for bridge-mode endpoint
+resolution:
+
+```toml
+[docker]
+network_mode = "bridge"
+host_ip = "host.docker.internal"  # or host LAN IP (for Linux: explicit host IP is recommended)
+```
+
+Why this matters:
+- In bridge mode, sandbox containers get internal Docker IPs.
+- External callers usually cannot reach those internal IPs directly.
+- `host_ip` lets endpoint resolution return host-reachable addresses.
+
+For SDK/API clients that cannot directly reach sandbox bridge addresses, request proxied
+endpoints through the server:
+
+```bash
+curl -H "OPEN-SANDBOX-API-KEY: your-secret-api-key" \
+  "http://localhost:8080/v1/sandboxes/<sandbox-id>/endpoints/44772?use_server_proxy=true"
+```
+
+The returned endpoint is rewritten to the server proxy route:
+- `<server-host>/sandboxes/<sandbox-id>/proxy/<port>`
+
+Reference runtime compose file:
+- `server/docker-compose.example.yaml`
+
 **Security hardening (applies to all Docker modes)**
    ```toml
    [docker]
@@ -125,6 +156,8 @@ Before you start the server, edit the configuration file to suit your environmen
    seccomp_profile = ""        # path or profile name; empty uses Docker default
    ```
    Further reading on Docker container security: https://docs.docker.com/engine/security/
+
+For common issues and solutions, see [Troubleshooting](TROUBLESHOOTING.md).
 
 **Secure container runtime (optional)**
 
@@ -434,6 +467,7 @@ curl -X DELETE \
 | `server.port` | integer | `8080` | Port to listen on |
 | `server.log_level` | string | `"INFO"` | Python logging level |
 | `server.api_key` | string | `null` | API key for authentication |
+| `server.eip` | string | `null` | Bound public IP; when set, used as the host part when returning sandbox endpoints (Docker runtime) |
 
 ### Runtime configuration
 

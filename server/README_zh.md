@@ -10,7 +10,7 @@
 - **生命周期管理**：标准化 REST API 覆盖创建、启动、暂停、恢复、删除
 - **可插拔运行时**：
   - **Docker**：已支持生产部署
-  - **Kubernetes**：配置占位，开发中
+  - **Kubernetes**：已支持生产部署
 - **自动过期**：可配置 TTL，支持续期
 - **访问控制**：API Key 认证（`OPEN-SANDBOX-API-KEY`），本地/开发可配置为空跳过
 - **网络模式**：
@@ -33,7 +33,7 @@
 - **包管理器**：[uv](https://github.com/astral-sh/uv)（推荐）或 pip
 - **运行时后端**：
   - Docker Engine 20.10+（使用 Docker 运行时）
-  - Kubernetes 1.21+（使用 Kubernetes 运行时，开发中）
+  - Kubernetes 1.21.1+（使用 Kubernetes 运行时）
 - **操作系统**：Linux、macOS 或带 WSL2 的 Windows
 
 ## 快速开始
@@ -114,6 +114,35 @@ opensandbox-server init-config ~/.sandbox.toml --example k8s-zh
    network_mode = "bridge"  # 容器隔离网络
    ```
 
+**Docker Compose 部署（server 本身运行在容器中）**
+
+当 `opensandbox-server` 运行在 Docker Compose 容器内，并通过挂载
+`/var/run/docker.sock` 管理沙箱时，需要为 bridge 模式端点解析配置一个可达的宿主地址：
+
+```toml
+[docker]
+network_mode = "bridge"
+host_ip = "host.docker.internal"  # 或宿主机 LAN IP（Linux 建议显式填写）
+```
+
+原因：
+- bridge 模式下沙箱容器会分配 Docker 内部 IP。
+- 外部调用方通常无法直接访问这些内部 IP。
+- `host_ip` 会让端点解析返回对调用方可达的宿主地址。
+
+对于无法直连 sandbox bridge 地址的 SDK/API 调用方，可通过 server 代理获取端点：
+
+```bash
+curl -H "OPEN-SANDBOX-API-KEY: your-secret-api-key" \
+  "http://localhost:8080/v1/sandboxes/<sandbox-id>/endpoints/44772?use_server_proxy=true"
+```
+
+返回端点会被重写为 server 代理路径：
+- `<server-host>/sandboxes/<sandbox-id>/proxy/<port>`
+
+可参考 Compose 运行示例：
+- `server/docker-compose.example.yaml`
+
 **安全加固（适用于所有 Docker 模式）**
    ```toml
    [docker]
@@ -126,6 +155,8 @@ opensandbox-server init-config ~/.sandbox.toml --example k8s-zh
    seccomp_profile = ""        # 配置文件路径或名称；为空使用 Docker 默认
    ```
    更多 Docker 容器安全参考：https://docs.docker.com/engine/security/
+
+常见问题及解决方案请参阅 [故障排查](TROUBLESHOOTING_zh.md)。
 
 **安全容器运行时（可选）**
 
@@ -435,6 +466,7 @@ curl -X DELETE \
 | `server.port` | integer | `8080` | 监听端口 |
 | `server.log_level` | string | `"INFO"` | Python 日志级别 |
 | `server.api_key` | string | `null` | API 认证密钥 |
+| `server.eip` | string | `null` | 绑定的公网 IP；配置后，返回 sandbox endpoint 时作为地址的 host 部分（Docker 运行时） |
 
 ### 运行时配置
 

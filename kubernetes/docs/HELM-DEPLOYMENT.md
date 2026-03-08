@@ -53,7 +53,7 @@ COMPONENT=task-executor TAG=v0.0.1 ./build.sh
 #### 2. 安装本地 Helm Chart
 
 ```bash
-helm install opensandbox ./charts/opensandbox-controller \
+helm install opensandbox-controller ./charts/opensandbox-controller \
   --set controller.image.repository=<your-registry>/controller \
   --set controller.image.tag=v0.0.1 \
   --namespace opensandbox-system \
@@ -122,7 +122,7 @@ controller:
       cpu: 100m
       memory: 128Mi
   
-  logLevel: 5
+  logLevel: debug
 
 imagePullSecrets:
   - name: myregistrykey
@@ -131,7 +131,7 @@ imagePullSecrets:
 使用自定义配置安装:
 
 ```bash
-helm install opensandbox ./charts/opensandbox-controller \
+helm install opensandbox-controller ./charts/opensandbox-controller \
   -f custom-values.yaml \
   --namespace opensandbox-system \
   --create-namespace
@@ -142,7 +142,7 @@ helm install opensandbox ./charts/opensandbox-controller \
 #### 1. 调整资源配置
 
 ```bash
-helm install opensandbox ./charts/opensandbox-controller \
+helm install opensandbox-controller ./charts/opensandbox-controller \
   --set controller.resources.limits.cpu=1000m \
   --set controller.resources.limits.memory=512Mi \
   --namespace opensandbox-system
@@ -168,7 +168,7 @@ controller:
 ```
 
 ```bash
-helm install opensandbox ./charts/opensandbox-controller \
+helm install opensandbox-controller ./charts/opensandbox-controller \
   -f affinity-values.yaml \
   --namespace opensandbox-system
 ```
@@ -341,7 +341,7 @@ kubectl auth can-i --as=system:serviceaccount:opensandbox-system:opensandbox-ope
 
 ```bash
 # 检查镜像配置
-helm get values opensandbox -n opensandbox-system
+helm get values opensandbox-controller -n opensandbox-system
 
 # 添加镜像拉取密钥
 kubectl create secret docker-registry myregistrykey \
@@ -351,7 +351,7 @@ kubectl create secret docker-registry myregistrykey \
   -n opensandbox-system
 
 # 使用密钥重新安装
-helm upgrade opensandbox ./charts/opensandbox-controller \
+helm upgrade opensandbox-controller ./charts/opensandbox-controller \
   --set imagePullSecrets[0].name=myregistrykey \
   --namespace opensandbox-system
 ```
@@ -365,7 +365,7 @@ helm upgrade opensandbox ./charts/opensandbox-controller \
 #### values-dev.yaml
 ```yaml
 controller:
-  logLevel: 5
+  logLevel: debug
   resources:
     limits:
       cpu: 200m
@@ -375,7 +375,7 @@ controller:
 #### values-prod.yaml
 ```yaml
 controller:
-  logLevel: 2
+  logLevel: warn
   replicaCount: 3
   resources:
     limits:
@@ -397,12 +397,12 @@ controller:
 
 ```bash
 # 开发环境
-helm install opensandbox ./charts/opensandbox-controller \
+helm install opensandbox-controller ./charts/opensandbox-controller \
   -f values-dev.yaml \
   --namespace opensandbox-dev
 
 # 生产环境
-helm install opensandbox ./charts/opensandbox-controller \
+helm install opensandbox-controller ./charts/opensandbox-controller \
   -f values-prod.yaml \
   --namespace opensandbox-prod
 ```

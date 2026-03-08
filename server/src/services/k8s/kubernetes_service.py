@@ -113,6 +113,7 @@ class KubernetesSandboxService(SandboxService):
                 k8s_config=self.app_config.kubernetes,
                 agent_sandbox_config=self.app_config.agent_sandbox,
                 ingress_config=self.ingress_config,
+                app_config=self.app_config,
             )
             logger.info(
                 f"Initialized workload provider: {self.workload_provider.__class__.__name__}"
@@ -187,18 +188,8 @@ class KubernetesSandboxService(SandboxService):
                     last_state = current_state
                     last_message = current_message
                 
-                # Check if Failed
-                if current_state == "Failed":
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail={
-                            "code": SandboxErrorCodes.K8S_POD_FAILED,
-                            "message": f"Pod failed: {current_message}",
-                        },
-                    )
-                
-                # Check if Running
-                if current_state == "Running":
+                # Check if Running or Allocated (IP assigned)
+                if current_state in ("Running", "Allocated"):
                     return workload
                 
             except HTTPException:
@@ -233,6 +224,26 @@ class KubernetesSandboxService(SandboxService):
         """
         # Common validation: egress.image must be configured
         ensure_egress_configured(request.network_policy, self.app_config.egress)
+
+    def _ensure_image_auth_support(self, request: CreateSandboxRequest) -> None:
+        """
+        Validate image auth support for Kubernetes runtime.
+
+        K8s runtime currently does not map per-request image.auth to imagePullSecrets.
+        """
+        if request.image.auth is None:
+            return
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": SandboxErrorCodes.INVALID_PARAMETER,
+                "message": (
+                    "image.auth is not supported in Kubernetes runtime yet. "
+                    "Use imagePullSecrets via Kubernetes ServiceAccount or sandbox template."
+                ),
+            },
+        )
     
     def create_sandbox(self, request: CreateSandboxRequest) -> CreateSandboxResponse:
         """
@@ -253,6 +264,7 @@ class KubernetesSandboxService(SandboxService):
         ensure_entrypoint(request.entrypoint)
         ensure_metadata_labels(request.metadata)
         self._ensure_network_policy_support(request)
+        self._ensure_image_auth_support(request)
         
         # Generate sandbox ID
         sandbox_id = self.generate_sandbox_id()
@@ -307,8 +319,8 @@ class KubernetesSandboxService(SandboxService):
             try:
                 workload = self._wait_for_sandbox_ready(
                     sandbox_id=sandbox_id,
-                    timeout_seconds=60,
-                    poll_interval_seconds=1.0,
+                    timeout_seconds=self.app_config.kubernetes.sandbox_create_timeout_seconds,
+                    poll_interval_seconds=self.app_config.kubernetes.sandbox_create_poll_interval_seconds,
                 )
                 
                 # Get final status

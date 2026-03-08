@@ -72,6 +72,7 @@ from src.services.helpers import (
     parse_timestamp,
 )
 from src.services.sandbox_service import SandboxService
+from src.services.runtime_resolver import SecureRuntimeResolver
 from src.services.validators import (
     ensure_egress_configured,
     ensure_entrypoint,
@@ -187,6 +188,10 @@ class DockerSandboxService(SandboxService):
         self._pending_lock = Lock()
         self._pending_cleanup_timers: Dict[str, Timer] = {}
         self._restore_existing_sandboxes()
+
+        # Initialize secure runtime resolver
+        self.resolver = SecureRuntimeResolver(self.app_config)
+        self.docker_runtime = self.resolver.get_docker_runtime()
 
     def _resolve_api_timeout(self) -> int:
         """Docker API timeout in seconds: [docker].api_timeout if set, else default 180."""
@@ -976,14 +981,15 @@ class DockerSandboxService(SandboxService):
         Docker-specific validation for host bind mount volumes.
 
         Validates that the resolved host path (host.path + optional subPath)
-        exists on the filesystem and remains within allowed prefixes.
+        remains within allowed prefixes, then ensures the directory exists on
+        the filesystem — creating it automatically if it does not.
 
         Args:
             volume: Volume with host backend.
             allowed_prefixes: Optional allowlist of host path prefixes.
 
         Raises:
-            HTTPException: When the resolved path is invalid or missing.
+            HTTPException: When the resolved path is invalid or cannot be created.
         """
         resolved_path = volume.host.path
         if volume.sub_path:
@@ -996,14 +1002,16 @@ class DockerSandboxService(SandboxService):
         if allowed_prefixes and resolved_path != volume.host.path:
             ensure_valid_host_path(resolved_path, allowed_prefixes)
 
-        if not os.path.exists(resolved_path):
+        try:
+            os.makedirs(resolved_path, exist_ok=True)
+        except OSError as e:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail={
-                    "code": SandboxErrorCodes.HOST_PATH_NOT_FOUND,
+                    "code": SandboxErrorCodes.HOST_PATH_CREATE_FAILED,
                     "message": (
-                        f"Volume '{volume.name}': resolved host path '{resolved_path}' "
-                        "does not exist. Host paths must exist before sandbox creation."
+                        f"Volume '{volume.name}': could not ensure host path "
+                        f"directory exists at '{resolved_path}': {type(e).__name__}"
                     ),
                 },
             )
@@ -1548,6 +1556,10 @@ class DockerSandboxService(SandboxService):
         return ip or None
 
     def _resolve_public_host(self) -> str:
+        """Resolve the host used in endpoint URLs. If [server].eip is set, use it directly without resolving host."""
+        eip_cfg = (self.app_config.server.eip or "").strip()
+        if eip_cfg:
+            return eip_cfg
         host_cfg = (self.app_config.server.host or "").strip()
         host_key = host_cfg.lower()
         if host_key in {"", "0.0.0.0", "::"}:
@@ -1634,6 +1646,13 @@ class DockerSandboxService(SandboxService):
             host_config_kwargs["mem_limit"] = mem_limit
         if nano_cpus:
             host_config_kwargs["nano_cpus"] = nano_cpus
+        # Inject secure runtime into host_config
+        if self.docker_runtime:
+            logger.info(
+                "Using Docker runtime '%s' for container creation",
+                self.docker_runtime,
+            )
+            host_config_kwargs["runtime"] = self.docker_runtime
         return host_config_kwargs
 
     def _allocate_distinct_host_ports(self) -> tuple[int, int]:
@@ -1783,16 +1802,18 @@ class DockerSandboxService(SandboxService):
         container_id: Optional[str] = None
         try:
             with self._docker_operation("create sandbox container", sandbox_id):
-                response = self.docker_client.api.create_container(
-                    image=image_uri,
-                    entrypoint=[BOOTSTRAP_PATH],
-                    command=bootstrap_command,
-                    ports=exposed_ports,
-                    name=f"sandbox-{sandbox_id}",
-                    environment=environment,
-                    labels=labels,
-                    host_config=host_config,
-                )
+                container_kwargs = {
+                    "image": image_uri,
+                    "entrypoint": [BOOTSTRAP_PATH],
+                    "command": bootstrap_command,
+                    "ports": exposed_ports,
+                    "name": f"sandbox-{sandbox_id}",
+                    "environment": environment,
+                    "labels": labels,
+                    "host_config": host_config,
+                }
+
+                response = self.docker_client.api.create_container(**container_kwargs)
             container_id = response.get("Id")
             if not container_id:
                 raise HTTPException(

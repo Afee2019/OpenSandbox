@@ -55,8 +55,9 @@ Secure container runtimes like gVisor, Firecracker, and Kata Containers provide 
 | Runtime | Isolation Mechanism | Use Case |
 |---------|-------------------|----------|
 | gVisor | User-space kernel (syscall interception) | General workloads, low overhead |
-| Firecracker | Lightweight microVM | High isolation, fast boot |
-| Kata Containers | Full VM with optimized hypervisor | Maximum isolation, compatibility |
+| Kata Containers (QEMU) | Full VM with QEMU hypervisor | Maximum isolation, compatibility |
+| Kata Containers (Firecracker) | MicroVM with Firecracker hypervisor | High density, minimal footprint |
+| Kata Containers (CLH) | Cloud Hypervisor | Balanced performance and isolation |
 
 ### Goals
 
@@ -111,15 +112,23 @@ Server Config                              Backend
 1. **Infrastructure Dependency**: Secure runtimes must be pre-installed and configured on the host (Docker) or cluster (Kubernetes) before use
 
 2. **Performance Overhead**: Secure runtimes add latency and resource overhead compared to runc:
-   - gVisor: ~10-50ms additional startup, minimal memory overhead
-   - Kata Containers: Performance varies significantly by hypervisor backend:
 
-     | Hypervisor | Cold Start | Memory Overhead | Notes |
-     |-----------|-----------|----------------|-------|
-     | QEMU | ~500ms | ~20-50MB | Default, most feature-complete |
-     | Cloud Hypervisor (CLH) | ~200ms | ~10-20MB | Lightweight, Rust-based |
-     | Firecracker | ~125ms | ~5MB | Minimal footprint, limited features |
-     | Dragonball | ~100-200ms | ~10MB | Optimized for cloud-native |
+     | Runtime | Isolation Mechanism | Startup Overhead | Memory Overhead | Best For |
+     |---------|---------------------|------------------|-----------------|----------|
+     | **runc** (default) | Process-level cgroups | ~0ms | Minimal | Trusted workloads, local development |
+     | **gVisor** | User-space kernel (syscall interception) | ~10-50ms | ~50MB | General workloads with low overhead |
+     | **Kata (QEMU)** | Full VM with QEMU hypervisor | ~500ms | ~20-50MB | Maximum compatibility and isolation |
+     | **Kata (Firecracker)** | MicroVM with Firecracker hypervisor | ~125ms | ~5MB | High density, minimal footprint |
+     | **Kata (CLH)** | Cloud Hypervisor | ~200ms | ~10-20MB | Balanced performance and isolation |
+
+     Warm start performance (from pre-warmed Pool):
+
+     | Runtime | Cold Start | Warm Start (from Pool) | Memory per Sandbox |
+     |---------|-----------|------------------------|-------------------|
+     | runc | ~500ms | ~50ms | ~5MB |
+     | gVisor | ~550ms | ~100ms | ~50MB |
+     | Kata (QEMU) | ~1000ms | ~200ms | ~20-50MB |
+     | Kata (Firecracker) | ~625ms | ~125ms | ~5MB |
 
      The actual hypervisor is determined by the `RuntimeClass` handler configured by the SRE administrator (e.g., `kata-qemu`, `kata-clh`, `kata-fc`).
 
@@ -231,7 +240,7 @@ Example 3 — Kata + Firecracker on Kubernetes:
 # ~/.sandbox.toml
 [runtime]
 type = "kubernetes"
-execd_image = "opensandbox/execd:v1.0.5"
+execd_image = "opensandbox/execd:latest"
 
 [secure_runtime]
 type = "firecracker"
@@ -247,18 +256,32 @@ OpenSandbox does not install secure runtimes. The following must be configured b
 
 **Step 1: Install gVisor runsc**
 
+For Docker mode, you only need to install the **runsc** OCI runtime:
+
 ```bash
 # Ubuntu/Debian
 curl -fsSL https://gvisor.dev/archive.key | sudo gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg
 echo "deb [signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" | \
   sudo tee /etc/apt/sources.list.d/gvisor.list
 sudo apt-get update && sudo apt-get install -y runsc
+
+# Verify installation
+runsc --version
 ```
+
+> **Note**: For Docker mode, only `runsc` is required. The `containerd-shim-runsc-v1` is only needed for Kubernetes/containerd.
 
 **Step 2: Configure Docker daemon**
 
+Use the `runsc install` command to automatically configure Docker daemon:
+
+```bash
+sudo runsc install
+```
+
+Or manually edit `/etc/docker/daemon.json`:
+
 ```json
-// /etc/docker/daemon.json
 {
   "runtimes": {
     "runsc": {
@@ -284,20 +307,85 @@ docker run --runtime=runsc hello-world
 
 #### Docker Mode - Kata Containers Setup
 
+##### System Requirements
+
+Kata Containers requires hardware virtualization support. Verify your system meets the following requirements:
+
+**Hardware Virtualization Support:**
 ```bash
-# Install Kata Containers
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/kata-containers/kata-containers/main/utils/kata-manager.sh) install-docker-system"
+# Check if CPU supports hardware virtualization (VT-x for Intel, AMD-V for AMD)
+lscpu | grep Virtualization
+# Expected output: Virtualization: VT-x (Intel) or AMD-V (AMD)
+
+# Alternatively on Intel
+grep -E --color=auto 'vmx|svm' /proc/cpuinfo
+# Expected: vmx (Intel) or svm (AMD) flags present
 ```
 
+**KVM Module:**
+```bash
+# Check if KVM module is loaded
+lsmod | grep kvm
+# Expected: kvm_intel (Intel) or kvm_amd (AMD)
+
+# If not loaded, load KVM module
+sudo modprobe kvm_intel  # For Intel
+# or
+sudo modprobe kvm_amd    # For AMD
+```
+
+**Kernel Requirements:**
+- Linux kernel 5.10 or later recommended
+- KVM enabled in kernel config
+
+**Docker Requirements:**
+- Docker 20.10 or later
+- `/etc/docker/daemon.json` configured for Kata runtime
+
+##### Installation
+
+Download and install Kata Containers static binaries from GitHub releases:
+
+```bash
+# Find the latest release at https://github.com/kata-containers/kata-containers/releases
+KATA_VERSION="3.27.0"
+wget https://github.com/kata-containers/kata-containers/releases/download/${KATA_VERSION}/kata-static-${KATA_VERSION}-amd64.tar.zst
+
+# Extract to root directory - Kata will be installed in /opt/kata
+zstd -d kata-static-${KATA_VERSION}-amd64.tar.zst
+tar -xvf kata-static-${KATA_VERSION}-amd64.tar -C /
+
+# Create symbolic links for PATH access
+sudo ln -sf /opt/kata/bin/kata-runtime /usr/local/bin/kata-runtime
+sudo ln -sf /opt/kata/bin/containerd-shim-kata-v2 /usr/local/bin/containerd-shim-kata-v2
+
+# Verify installation
+kata-runtime --version
+```
+
+##### Configure Docker Daemon
+
+Edit `/etc/docker/daemon.json` to register Kata as a runtime:
+
 ```json
-// /etc/docker/daemon.json
 {
+  "default-runtime": "runc",
   "runtimes": {
-    "kata-runtime": {
-      "path": "/usr/bin/kata-runtime"
+    "kata": {
+      "runtimeType": "io.containerd.kata.v2"
     }
   }
 }
+```
+
+Restart Docker to apply changes:
+
+```bash
+sudo systemctl restart docker
+
+# Verify Kata is available in Docker
+docker info | grep -A5 Runtimes
+# Expected output should include "io.containerd.runc.v2 kata"
 ```
 
 #### Kubernetes Mode - RuntimeClass Setup
@@ -311,6 +399,9 @@ kind: RuntimeClass
 metadata:
   name: gvisor
 handler: runsc  # Matches containerd handler name
+scheduling:
+  nodeSelector:
+    kubernetes.io/arch: amd64
 
 ---
 # Kata Containers (QEMU backend) RuntimeClass
@@ -334,13 +425,66 @@ containerd configuration (`/etc/containerd/config.toml`):
 
 ```toml
 [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc]
-  runtime_type = "io.containerd.runsc.v1"
+          runtime_type = "io.containerd.runsc.v1"
+          [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runsc.options]
+            TypeUrl = "io.containerd.runsc.v1.options"
+            ConfigPath = "/etc/containerd/runsc.toml"
 
 [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-qemu]
   runtime_type = "io.containerd.kata-qemu.v2"
 
 [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata-fc]
   runtime_type = "io.containerd.kata-fc.v2"
+```
+
+Create the gVisor configuration file:
+
+```bash
+sudo tee /etc/containerd/runsc.toml > /dev/null <<'EOF'
+[runsc]
+  platform = "ptrace"
+EOF
+```
+
+Restart containerd:
+
+```bash
+sudo systemctl restart containerd
+```
+
+##### Kata Containers on Kubernetes
+
+Follow the [official Kata Containers installation guide](https://github.com/kata-containers/kata-containers/blob/main/tools/packaging/kata-deploy/helm-chart/README.md).
+
+Quick installation using Helm:
+
+```bash
+# Install kata-deploy which will set up Kata Containers via DaemonSet
+helm install kata-deploy "oci://ghcr.io/kata-containers/kata-deploy-charts/kata-deploy" --version "3.27.0" --namespace kube-system --create-namespace
+
+# Wait for kata-deploy pods to be ready
+kubectl wait --for=condition=ready pod -l name=kata-deploy -n kube-system --timeout=300s
+```
+
+> **Note**: The `kata-deploy` DaemonSet will automatically configure containerd on all nodes. Manual containerd configuration is not required when using kata-deploy.
+
+Verify installation:
+
+```bash
+# Check RuntimeClasses
+kubectl get runtimeclass
+
+# Expected output:
+# NAME         HANDLER     AGE
+# kata         kata-qemu   10m
+# kata-qemu    kata-qemu   10m
+# kata-clh     kata-clh    10m
+# kata-fc      kata-fc     10m
+
+# Test Kata with a simple pod
+kubectl run test-kata --restart=Never --image=hello-world --runtime-class=kata-qemu
+kubectl logs test-kata
+kubectl delete pod test-kata
 ```
 
 ### Runtime Resolver

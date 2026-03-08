@@ -3,6 +3,12 @@
 
   <h1>OpenSandbox</h1>
 
+  <p align="center">
+    <a href="https://trendshift.io/repositories/21828" target="_blank">
+      <img src="https://trendshift.io/api/badge/repositories/21828" alt="alibaba%2FOpenSandbox | Trendshift" style="width: 320px; height: 70px;" width="320" height="70" />
+    </a>
+  </p>
+
 <p align="center">
   <a href="https://github.com/alibaba/OpenSandbox">
     <img src="https://img.shields.io/github/stars/alibaba/OpenSandbox.svg?style=social" alt="GitHub stars" />
@@ -11,7 +17,7 @@
     <img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" />
   </a>
   <a href="https://www.apache.org/licenses/LICENSE-2.0.html">
-    <img src="https://img.shields.io/github/license/alibaba/OpenSandbox.svg" alt="license" />
+    <img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="license" />
   </a>
   <a href="https://badge.fury.io/py/opensandbox">
     <img src="https://badge.fury.io/py/opensandbox.svg" alt="PyPI version" />
@@ -27,7 +33,7 @@
   <hr />
 </div>
 
-[Document](https://open-sandbox.ai/) | [文档](https://open-sandbox.ai/zh/)
+[Documentation](https://open-sandbox.ai/) | [中文文档](https://open-sandbox.ai/zh/)
 
 OpenSandbox is a **general-purpose sandbox platform** for AI applications, offering multi-language SDKs, unified sandbox APIs, and Docker/Kubernetes runtimes for scenarios like Coding Agents, GUI Agents, Agent Evaluation, AI Code Execution, and RL Training.
 
@@ -38,6 +44,7 @@ OpenSandbox is a **general-purpose sandbox platform** for AI applications, offer
 - **Sandbox Runtime**: Built-in lifecycle management supporting Docker and [high-performance Kubernetes runtime](./kubernetes), enabling both local runs and large-scale distributed scheduling.
 - **Sandbox Environments**: Built-in Command, Filesystem, and Code Interpreter implementations. Examples cover Coding Agents (e.g., Claude Code), browser automation (Chrome, Playwright), and desktop environments (VNC, VS Code).
 - **Network Policy**: Unified [Ingress Gateway](components/ingress) with multiple routing strategies plus per-sandbox [egress controls](components/egress).
+- **Strong Isolation**: Supports secure container runtimes like gVisor, Kata Containers, and Firecracker microVM for enhanced isolation between sandbox workloads and the host. See [Secure Container Runtime Guide](docs/secure-container.md) for details.
 
 ## Examples
 
@@ -55,7 +62,7 @@ uv pip install opensandbox-server
 opensandbox-server init-config ~/.sandbox.toml --example docker
 ```
 
-> If you prefer working from source, you can still clone the repo for development, but server startup no longer requires it.
+> If you prefer working from source, you can still clone the repo for development, but you no longer need to clone this repository just to start the server.
 >
 > ```bash
 > git clone https://github.com/alibaba/OpenSandbox.git
@@ -142,13 +149,13 @@ if __name__ == "__main__":
 
 ### More Examples
 
-OpenSandbox provides rich examples demonstrating sandbox usage in different scenarios. All example code is located in the `examples/` directory.
+OpenSandbox provides examples covering SDK usage, agent integrations, browser automation, and training workloads. All example code is located in the `examples/` directory.
 
 #### 🎯 Basic Examples
 
 - **[code-interpreter](examples/code-interpreter/README.md)** - End-to-end Code Interpreter SDK workflow in a sandbox.
 - **[aio-sandbox](examples/aio-sandbox/README.md)** - All-in-One sandbox setup using the OpenSandbox SDK.
-- **[agent-sandbox](examples/agent-sandbox/README.md)** - Run OpenSandbox on Kubernetes via [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox).
+- **[agent-sandbox](examples/agent-sandbox/README.md)** - Example integration for running OpenSandbox workloads on Kubernetes with [kubernetes-sigs/agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox).
 
 #### 🤖 Coding Agent Integrations
 
@@ -164,7 +171,7 @@ OpenSandbox provides rich examples demonstrating sandbox usage in different scen
 
 #### 🌐 Browser and Desktop Environments
 
-- **[chrome](examples/chrome/README.md)** - Headless Chromium with VNC and DevTools access for automation/debugging.
+- **[chrome](examples/chrome/README.md)** - Chromium sandbox with VNC and DevTools access for automation and debugging.
 - **[playwright](examples/playwright/README.md)** - Playwright + Chromium headless scraping and testing example.
 - **[desktop](examples/desktop/README.md)** - Full desktop environment in a sandbox with VNC access.
 - **[vscode](examples/vscode/README.md)** - code-server (VS Code Web) running inside a sandbox for remote dev.
@@ -208,21 +215,22 @@ For detailed architecture, see [docs/architecture.md](docs/architecture.md).
 
 This project is open source under the [Apache 2.0 License](LICENSE).
 
-## Roadmap
+## Roadmap [2026.03]
 
 ### SDK
 
-- [ ] **Go SDK** - Go client SDK for sandbox lifecycle management, command execution, and file operations.
+- **Sandbox client connection pool** - Client-side sandbox connection pool management, providing pre-provisioned sandboxes to obtain an environment at X ms.
+- **Go SDK** - Go client SDK for sandbox lifecycle management, command execution, and file operations.
 
 ### Sandbox Runtime
 
-- [ ] **Persistent storage** - Mountable persistent storage for sandboxes (see [Proposal 0003](oseps/0003-volume-and-volumebinding-support.md)).
-- [ ] **Ingress multi-network strategies** - Multi-Kubernetes provisioning and multi-network modes for the Ingress Gateway.
-- [ ] **Local lightweight sandbox** - Lightweight sandbox for AI tools running directly on PCs.
+- **Persistent volumes** - Mountable persistent volumes for sandboxes (see [Proposal 0003](oseps/0003-volume-and-volumebinding-support.md)).
+- **Local lightweight sandbox** - Lightweight sandbox for AI tools running directly on PCs.
+- **Secure Container** - Secure sandbox for AI Agents running inside container.
 
 ### Deployment
 
-- [ ] **Kubernetes Helm** - Helm charts to deploy all components.
+- **Guide** - Deployment guide for self-hosted Kubernetes cluster.
 
 ## Contact and Discussion
 
@@ -230,4 +238,3 @@ This project is open source under the [Apache 2.0 License](LICENSE).
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=alibaba/OpenSandbox&type=date&legend=top-left)](https://www.star-history.com/#alibaba/OpenSandbox&type=date&legend=top-left)
-

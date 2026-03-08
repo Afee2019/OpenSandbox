@@ -16,7 +16,9 @@
 Agent-sandbox workload provider implementation.
 """
 
+import hashlib
 import logging
+import re
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Callable
 from threading import Lock
@@ -29,7 +31,7 @@ from kubernetes.client import (
     ApiException,
 )
 
-from src.config import IngressConfig
+from src.config import AppConfig, IngressConfig, ExecdInitResources
 from src.services.helpers import format_ingress_endpoint
 from src.api.schema import Endpoint, ImageSpec, NetworkPolicy
 from src.services.k8s.agent_sandbox_template import AgentSandboxTemplateManager
@@ -42,8 +44,34 @@ from src.services.k8s.egress_helper import (
 )
 from src.services.k8s.informer import WorkloadInformer
 from src.services.k8s.workload_provider import WorkloadProvider
+from src.services.runtime_resolver import SecureRuntimeResolver
 
 logger = logging.getLogger(__name__)
+
+DNS1035_LABEL_MAX_LENGTH = 63
+DNS1035_INVALID_CHARS = re.compile(r"[^a-z0-9-]+")
+DNS1035_DUPLICATE_HYPHENS = re.compile(r"-+")
+
+
+def _to_dns1035_label(value: str, prefix: str = "sandbox") -> str:
+    normalized = DNS1035_INVALID_CHARS.sub("-", value.strip().lower())
+    normalized = DNS1035_DUPLICATE_HYPHENS.sub("-", normalized).strip("-")
+
+    hash_suffix = hashlib.sha256(value.encode("utf-8")).hexdigest()[:8]
+
+    if not normalized:
+        normalized = f"{prefix}-{hash_suffix}"
+    elif not normalized[0].isalpha():
+        normalized = f"{prefix}-{normalized}"
+
+    if len(normalized) > DNS1035_LABEL_MAX_LENGTH:
+        max_base = DNS1035_LABEL_MAX_LENGTH - len(hash_suffix) - 1
+        base = normalized[:max_base].rstrip("-")
+        if not base or not base[0].isalpha():
+            base = prefix
+        normalized = f"{base}-{hash_suffix}"
+
+    return normalized.strip("-")
 
 
 class AgentSandboxProvider(WorkloadProvider):
@@ -62,6 +90,8 @@ class AgentSandboxProvider(WorkloadProvider):
         informer_factory: Optional[Callable[[str], WorkloadInformer]] = None,
         informer_resync_seconds: int = 300,
         informer_watch_timeout_seconds: int = 60,
+        app_config: Optional[AppConfig] = None,
+        execd_init_resources: Optional[ExecdInitResources] = None,
     ):
         self.k8s_client = k8s_client
         self.custom_api = k8s_client.get_custom_objects_api()
@@ -75,6 +105,7 @@ class AgentSandboxProvider(WorkloadProvider):
         self.service_account = service_account
         self.template_manager = AgentSandboxTemplateManager(template_file_path)
         self.ingress_config = ingress_config
+        self.execd_init_resources = execd_init_resources
         self._enable_informer = enable_informer
         self._informer_factory = informer_factory or (
             lambda ns: WorkloadInformer(
@@ -89,6 +120,26 @@ class AgentSandboxProvider(WorkloadProvider):
         )
         self._informers: Dict[str, WorkloadInformer] = {}
         self._informers_lock = Lock()
+
+        # Initialize secure runtime resolver
+        self.resolver = SecureRuntimeResolver(app_config) if app_config else None
+        self.runtime_class = (
+            self.resolver.get_k8s_runtime_class() if self.resolver else None
+        )
+
+    def _resource_name(self, sandbox_id: str) -> str:
+        return _to_dns1035_label(sandbox_id, prefix="sandbox")
+
+    def _resource_name_candidates(self, sandbox_id: str) -> List[str]:
+        candidates = []
+        primary = self._resource_name(sandbox_id)
+        candidates.append(primary)
+        if sandbox_id not in candidates:
+            candidates.append(sandbox_id)
+        legacy = self.legacy_resource_name(sandbox_id)
+        if legacy not in candidates:
+            candidates.append(legacy)
+        return candidates
 
     def create_workload(
         self,
@@ -105,6 +156,13 @@ class AgentSandboxProvider(WorkloadProvider):
         network_policy: Optional[NetworkPolicy] = None,
         egress_image: Optional[str] = None,
     ) -> Dict[str, Any]:
+        if self.runtime_class:
+            logger.info(
+                "Using Kubernetes RuntimeClass '%s' for sandbox %s",
+                self.runtime_class,
+                sandbox_id,
+            )
+
         pod_spec = self._build_pod_spec(
             image_spec=image_spec,
             entrypoint=entrypoint,
@@ -118,11 +176,13 @@ class AgentSandboxProvider(WorkloadProvider):
         if self.service_account:
             pod_spec["serviceAccountName"] = self.service_account
 
+        resource_name = self._resource_name(sandbox_id)
+
         runtime_manifest = {
             "apiVersion": f"{self.group}/{self.version}",
             "kind": "Sandbox",
             "metadata": {
-                "name": sandbox_id,
+                "name": resource_name,
                 "namespace": namespace,
                 "labels": labels,
             },
@@ -194,7 +254,11 @@ class AgentSandboxProvider(WorkloadProvider):
                 }
             ],
         }
-        
+
+        # Inject runtimeClassName if secure runtime is configured
+        if self.runtime_class:
+            pod_spec["runtimeClassName"] = self.runtime_class
+
         # Add egress sidecar if network policy is provided
         apply_egress_to_spec(
             pod_spec=pod_spec,
@@ -213,6 +277,13 @@ class AgentSandboxProvider(WorkloadProvider):
             "chmod +x /opt/opensandbox/bin/bootstrap.sh"
         )
 
+        resources = None
+        if self.execd_init_resources:
+            resources = V1ResourceRequirements(
+                limits=self.execd_init_resources.limits,
+                requests=self.execd_init_resources.requests,
+            )
+
         return V1Container(
             name="execd-installer",
             image=execd_image,
@@ -224,6 +295,7 @@ class AgentSandboxProvider(WorkloadProvider):
                     mount_path="/opt/opensandbox/bin",
                 )
             ],
+            resources=resources,
         )
 
     def _build_main_container(
@@ -325,56 +397,35 @@ class AgentSandboxProvider(WorkloadProvider):
         informer = self._get_informer(namespace)
         cache_ready = informer.has_synced if informer else False
 
-        if informer and cache_ready:
-            cached = informer.get(sandbox_id)
-            if cached:
-                return cached
+        candidates = self._resource_name_candidates(sandbox_id)
 
-            legacy_name = self.legacy_resource_name(sandbox_id)
-            if legacy_name != sandbox_id:
-                legacy_cached = informer.get(legacy_name)
-                if legacy_cached:
-                    return legacy_cached
+        if informer and cache_ready:
+            for name in candidates:
+                cached = informer.get(name)
+                if cached:
+                    return cached
 
         if informer and not cache_ready:
             logger.warning(
                 f"Informer cache not synced for namespace {namespace}; falling back to direct API get."
             )
 
-        try:
-            workload = self.custom_api.get_namespaced_custom_object(
-                group=self.group,
-                version=self.version,
-                namespace=namespace,
-                plural=self.plural,
-                name=sandbox_id,
-            )
-            if informer and workload:
-                informer.update_cache(workload)
-            return workload
-        except ApiException as e:
-            if e.status != 404:
-                logger.error(f"Unexpected error getting Sandbox for {sandbox_id}: {e}")
-                raise
-
-        # Fallback for pre-upgrade sandboxes that used "sandbox-<id>" naming
-        legacy_name = self.legacy_resource_name(sandbox_id)
-        if legacy_name != sandbox_id:
+        for name in candidates:
             try:
                 workload = self.custom_api.get_namespaced_custom_object(
                     group=self.group,
                     version=self.version,
                     namespace=namespace,
                     plural=self.plural,
-                    name=legacy_name,
+                    name=name,
                 )
                 if informer and workload:
                     informer.update_cache(workload)
                 return workload
             except ApiException as e:
-                if e.status == 404:
-                    return None
-                raise
+                if e.status != 404:
+                    logger.error(f"Unexpected error getting Sandbox for {sandbox_id}: {e}")
+                    raise
             except Exception as e:
                 logger.error(f"Unexpected error getting Sandbox for {sandbox_id}: {e}")
                 raise
@@ -497,6 +548,14 @@ class AgentSandboxProvider(WorkloadProvider):
         }
 
     def _pod_state_from_selector(self, workload: Dict[str, Any]) -> Optional[tuple[str, str, str]]:
+        """Resolve state from Pod list via label selector.
+
+        Returns three-state tuple (state, reason, message):
+        - Running: Pod phase Running and has IP
+        - Allocated: Pod has IP assigned but not Running yet
+        - Pending: Pod scheduled but no IP yet
+        Returns None if selector/namespace missing or API call fails.
+        """
         status = workload.get("status", {})
         selector = status.get("selector")
         namespace = workload.get("metadata", {}).get("namespace")
@@ -512,17 +571,23 @@ class AgentSandboxProvider(WorkloadProvider):
             return None
 
         for pod in pods:
-            if pod.status and pod.status.phase == "Running":
-                if pod.status.pod_ip:
+            if pod.status:
+                if pod.status.pod_ip and pod.status.phase == "Running":
                     return (
                         "Running",
                         "POD_READY",
                         "Pod is running with IP assigned",
                     )
+                if pod.status.pod_ip:
+                    return (
+                        "Allocated",
+                        "IP_ASSIGNED",
+                        "Pod has IP assigned but not running yet",
+                    )
                 return (
                     "Pending",
-                    "POD_READY_NO_IP",
-                    "Pod is running but waiting for IP assignment",
+                    "POD_SCHEDULED",
+                    "Pod is scheduled but waiting for IP assignment",
                 )
 
         if pods:

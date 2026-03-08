@@ -150,10 +150,77 @@ test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expect
 	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v $(GINKGO_ARGS)
 	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e_task/ -v -ginkgo.v $(GINKGO_ARGS)
 	$(MAKE) cleanup-test-e2e
+	$(MAKE) test-gvisor
+	$(MAKE) cleanup-gvisor
 
 .PHONY: cleanup-test-e2e
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 	@$(KIND) delete cluster --name $(KIND_CLUSTER)
+
+# Common E2E setup targets - install CRDs and controller for any Kind cluster
+.PHONY: install-e2e-deps
+install-e2e-deps:
+	@echo "Installing OpenSandbox CRDs..."
+	@$(MAKE) install
+	@echo "Installing OpenSandbox controller..."
+	@cd config/manager && $(KUSTOMIZE) edit set image controller=$(IMG)
+	@$(KUSTOMIZE) build config/default | kubectl apply -f -
+	@echo "Waiting for controller to be ready..."
+	@kubectl wait --for=condition=available --timeout=120s deployment -n opensandbox-system opensandbox-controller-manager || \
+		{ kubectl describe deployment -n opensandbox-system opensandbox-controller-manager; exit 1; }
+
+# RuntimeClass E2E testing - gVisor
+GVISOR_KIND_CLUSTER ?= gvisor-test
+GVISOR_KIND_IMAGE ?= kindest/node:v1.27.3
+
+# gVisor versions
+GVISOR_VERSION ?= 20260112
+GVISOR_RUNSC_BIN ?= $(shell pwd)/test/kind/gvisor/runsc
+GVISOR_SHIM_BIN ?= $(shell pwd)/test/kind/gvisor/containerd-shim-runsc-v1
+
+.PHONY: download-gvisor
+download-gvisor: ## Download gVisor runsc and containerd-shim-runsc-v1 binaries
+	@echo "Downloading gVisor runsc (release-$(GVISOR_VERSION))..."
+	@mkdir -p $(dir $(GVISOR_RUNSC_BIN))
+	@wget -q "https://storage.googleapis.com/gvisor/releases/release/$(GVISOR_VERSION)/$$(uname -m)/runsc" -O $(GVISOR_RUNSC_BIN)
+	@chmod +x $(GVISOR_RUNSC_BIN)
+	@echo "Downloading containerd-shim-runsc-v1..."
+	@wget -q "https://storage.googleapis.com/gvisor/releases/release/$(GVISOR_VERSION)/$$(uname -m)/containerd-shim-runsc-v1" -O $(GVISOR_SHIM_BIN)
+	@chmod +x $(GVISOR_SHIM_BIN)
+	@echo "gVisor binaries downloaded successfully."
+
+.PHONY: setup-gvisor
+setup-gvisor: download-gvisor ## Set up Kind cluster with gVisor (runsc) for e2e tests
+	@echo "Creating gVisor Kind cluster with runsc binaries from kubernetes/test/kind/gvisor/..."
+	@export GVISOR_KIND_CLUSTER=$(GVISOR_KIND_CLUSTER) && \
+		export GVISOR_KIND_IMAGE=$(GVISOR_KIND_IMAGE) && \
+		export PWD=$$(pwd) && \
+		envsubst < test/e2e_runtime/gvisor/testdata/gvisor.yaml.tmpl | \
+		$(KIND) create cluster --config -
+	@echo "Creating runsc.toml on Kind nodes..."
+	@for node in $$(docker ps --filter "name=$(GVISOR_KIND_CLUSTER)-" --format "{{.Names}}"); do \
+		docker exec $$node sh -c 'mkdir -p /etc/containerd && echo "[runsc]" > /etc/containerd/runsc.toml && echo "  platform = \"ptrace\"" >> /etc/containerd/runsc.toml'; \
+	done
+
+.PHONY: cleanup-gvisor
+cleanup-gvisor: ## Tear down gVisor Kind cluster
+	@$(KIND) delete cluster --name $(GVISOR_KIND_CLUSTER) 2>/dev/null || true
+
+# install-gvisor-deps installs CRDs and controller for gVisor tests
+.PHONY: install-gvisor-deps
+install-gvisor-deps:
+	@echo "Building and loading controller image into gVisor Kind cluster..."
+	@$(MAKE) docker-build-controller
+	@$(KIND) load docker-image --name $(GVISOR_KIND_CLUSTER) $(IMG)
+	@$(MAKE) install-e2e-deps
+
+.PHONY: test-gvisor
+test-gvisor: setup-gvisor install-gvisor-deps ## Run gVisor RuntimeClass e2e tests
+	@echo "Installing gVisor RuntimeClass resources..."
+	@kubectl apply -f test/e2e_runtime/gvisor/testdata/runtimeclass.yaml
+	@echo "Running gVisor E2E tests..."
+	KIND_CLUSTER=$(GVISOR_KIND_CLUSTER) go test ./test/e2e_runtime/gvisor -v -ginkgo.v $(GINKGO_ARGS)
+	$(MAKE) cleanup-gvisor
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
@@ -428,14 +495,14 @@ helm-lint: ## Lint the Helm chart
 .PHONY: helm-template
 helm-template: ## Generate Kubernetes manifests from Helm chart
 	@echo "Generating manifests from Helm chart..."
-	helm template opensandbox $(HELM_CHART_PATH) \
+	helm template opensandbox-controller $(HELM_CHART_PATH) \
 		--set controller.image.repository=$(IMAGE_TAG_BASE) \
 		--set controller.image.tag=v$(VERSION)
 
 .PHONY: helm-template-debug
 helm-template-debug: ## Generate Kubernetes manifests with debug output
 	@echo "Generating manifests from Helm chart with debug..."
-	helm template opensandbox $(HELM_CHART_PATH) \
+	helm template opensandbox-controller $(HELM_CHART_PATH) \
 		--set controller.image.repository=$(IMAGE_TAG_BASE) \
 		--set controller.image.tag=v$(VERSION) \
 		--debug
@@ -449,7 +516,7 @@ helm-package: ## Package the Helm chart
 .PHONY: helm-install
 helm-install: ## Install the Helm chart
 	@echo "Installing Helm chart..."
-	helm install opensandbox $(HELM_CHART_PATH) \
+	helm install opensandbox-controller $(HELM_CHART_PATH) \
 		--set controller.image.repository=$(IMAGE_TAG_BASE) \
 		--set controller.image.tag=v$(VERSION) \
 		--namespace opensandbox-system \
@@ -458,7 +525,7 @@ helm-install: ## Install the Helm chart
 .PHONY: helm-upgrade
 helm-upgrade: ## Upgrade the Helm chart
 	@echo "Upgrading Helm chart..."
-	helm upgrade opensandbox $(HELM_CHART_PATH) \
+	helm upgrade opensandbox-controller $(HELM_CHART_PATH) \
 		--set controller.image.repository=$(IMAGE_TAG_BASE) \
 		--set controller.image.tag=v$(VERSION) \
 		--namespace opensandbox-system
@@ -466,12 +533,12 @@ helm-upgrade: ## Upgrade the Helm chart
 .PHONY: helm-uninstall
 helm-uninstall: ## Uninstall the Helm chart
 	@echo "Uninstalling Helm chart..."
-	helm uninstall opensandbox --namespace opensandbox-system
+	helm uninstall opensandbox-controller --namespace opensandbox-system
 
 .PHONY: helm-test
 helm-test: ## Run Helm chart tests
 	@echo "Running Helm chart tests..."
-	helm test opensandbox --namespace opensandbox-system
+	helm test opensandbox-controller --namespace opensandbox-system
 
 .PHONY: helm-docs
 helm-docs: ## Generate Helm chart documentation (requires helm-docs)
@@ -486,7 +553,7 @@ helm-docs: ## Generate Helm chart documentation (requires helm-docs)
 .PHONY: helm-dry-run
 helm-dry-run: ## Perform a dry-run install of the Helm chart
 	@echo "Performing dry-run installation..."
-	helm install opensandbox $(HELM_CHART_PATH) \
+	helm install opensandbox-controller $(HELM_CHART_PATH) \
 		--set controller.image.repository=$(IMAGE_TAG_BASE) \
 		--set controller.image.tag=v$(VERSION) \
 		--namespace opensandbox-system \

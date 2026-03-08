@@ -155,7 +155,7 @@ You can install OpenSandbox Controller directly from GitHub Releases. Check the 
 
 ```sh
 # Replace <version> with the desired version (e.g., 0.1.0)
-helm install opensandbox \
+helm install opensandbox-controller \
   https://github.com/alibaba/OpenSandbox/releases/download/helm/opensandbox-controller/<version>/opensandbox-controller-<version>.tgz \
   --namespace opensandbox-system \
   --create-namespace
@@ -163,7 +163,7 @@ helm install opensandbox \
 
 Example with specific version:
 ```sh
-helm install opensandbox \
+helm install opensandbox-controller \
   https://github.com/alibaba/OpenSandbox/releases/download/helm/opensandbox-controller/0.1.0/opensandbox-controller-0.1.0.tgz \
   --namespace opensandbox-system \
   --create-namespace
@@ -175,7 +175,7 @@ You can also download the chart first and then install:
 wget https://github.com/alibaba/OpenSandbox/releases/download/helm/opensandbox-controller/<version>/opensandbox-controller-<version>.tgz
 
 # Install from local file
-helm install opensandbox ./opensandbox-controller-<version>.tgz \
+helm install opensandbox-controller ./opensandbox-controller-<version>.tgz \
   --namespace opensandbox-system \
   --create-namespace
 ```
@@ -186,7 +186,7 @@ Use `--set` flags to customize the configuration:
 
 ```sh
 # Example: Custom resource limits
-helm install opensandbox \
+helm install opensandbox-controller \
   https://github.com/alibaba/OpenSandbox/releases/download/helm/opensandbox-controller/0.1.0/opensandbox-controller-0.1.0.tgz \
   --namespace opensandbox-system \
   --create-namespace \
@@ -195,11 +195,11 @@ helm install opensandbox \
   --set controller.resources.limits.memory=512Mi
 
 # Example: Custom log level
-helm install opensandbox \
+helm install opensandbox-controller \
   https://github.com/alibaba/OpenSandbox/releases/download/helm/opensandbox-controller/0.1.0/opensandbox-controller-0.1.0.tgz \
   --namespace opensandbox-system \
   --create-namespace \
-  --set controller.logLevel=5
+  --set controller.logLevel=debug
 ```
 
 Or use a values file for complex configurations:
@@ -216,11 +216,11 @@ controller:
     requests:
       cpu: 100m
       memory: 128Mi
-  logLevel: 5
+  logLevel: debug
 EOF
 
 # Install with custom values
-helm install opensandbox \
+helm install opensandbox-controller \
   https://github.com/alibaba/OpenSandbox/releases/download/helm/opensandbox-controller/0.1.0/opensandbox-controller-0.1.0.tgz \
   --namespace opensandbox-system \
   --create-namespace \
@@ -242,7 +242,7 @@ If you're developing or need to customize the chart:
 
 2. **Install with Helm:**
    ```sh
-   helm install opensandbox ./charts/opensandbox-controller \
+   helm install opensandbox-controller ./charts/opensandbox-controller \
      --set controller.image.repository=<some-registry>/opensandbox-controller \
      --set controller.image.tag=<tag> \
      --namespace opensandbox-system \
@@ -264,7 +264,7 @@ kubectl logs -n opensandbox-system -l control-plane=controller-manager -f
 
 ```sh
 # Upgrade to a new version
-helm upgrade opensandbox \
+helm upgrade opensandbox-controller \
   https://github.com/alibaba/OpenSandbox/releases/download/helm/opensandbox-controller/<new-version>/opensandbox-controller-<new-version>.tgz \
   --namespace opensandbox-system
 ```
@@ -272,7 +272,7 @@ helm upgrade opensandbox \
 **Uninstall:**
 
 ```sh
-helm uninstall opensandbox -n opensandbox-system
+helm uninstall opensandbox-controller -n opensandbox-system
 ```
 
 For more configuration options and advanced usage, see the [Helm Chart README](charts/opensandbox-controller/README.md).

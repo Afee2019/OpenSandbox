@@ -33,7 +33,7 @@ A production-grade, FastAPI-based service for managing the lifecycle of containe
 - **Package Manager**: [uv](https://github.com/astral-sh/uv) (recommended) or pip
 - **Runtime Backend**:
   - Docker Engine 20.10+ (for Docker runtime)
-  - Kubernetes 1.22.4+ (for Kubernetes runtime)
+  - Kubernetes 1.21.1+ (for Kubernetes runtime)
 - **Operating System**: Linux, macOS, or Windows with WSL2
 
 ## Quick Start
@@ -158,6 +158,46 @@ Reference runtime compose file:
    Further reading on Docker container security: https://docs.docker.com/engine/security/
 
 For common issues and solutions, see [Troubleshooting](TROUBLESHOOTING.md).
+
+**Secure container runtime (optional)**
+
+OpenSandbox supports secure container runtimes for enhanced isolation:
+
+```toml
+[secure_runtime]
+type = "gvisor"              # Options: "", "gvisor", "kata", "firecracker"
+docker_runtime = "runsc"      # Docker OCI runtime name (for gVisor, Kata)
+# k8s_runtime_class = "gvisor"  # Kubernetes RuntimeClass name (for K8s)
+```
+
+- `type=""` (default): No secure runtime, uses runc
+- `type="gvisor"`: Uses gVisor (runsc) for user-space kernel isolation
+- `type="kata"`: Uses Kata Containers for VM-level isolation
+- `type="firecracker"`: Uses Firecracker microVM (Kubernetes only)
+
+> **Detailed guide**: See [Secure Container Runtime Guide](../docs/secure-container.md) for complete installation instructions, system requirements, and troubleshooting.
+
+**Docker daemon setup** for gVisor:
+```json
+{
+  "runtimes": {
+    "runsc": {
+      "path": "/usr/bin/runsc"
+    }
+  }
+}
+```
+
+**Kubernetes setup**: Create RuntimeClass before using:
+```bash
+kubectl create -f - <<EOF
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: gvisor
+handler: runsc
+EOF
+```
 
 **Ingress exposure (direct | gateway)**
    ```toml
@@ -427,6 +467,7 @@ curl -X DELETE \
 | `server.port` | integer | `8080` | Port to listen on |
 | `server.log_level` | string | `"INFO"` | Python logging level |
 | `server.api_key` | string | `null` | API key for authentication |
+| `server.eip` | string | `null` | Bound public IP; when set, used as the host part when returning sandbox endpoints (Docker runtime) |
 
 ### Runtime configuration
 

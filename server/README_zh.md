@@ -33,7 +33,7 @@
 - **包管理器**：[uv](https://github.com/astral-sh/uv)（推荐）或 pip
 - **运行时后端**：
   - Docker Engine 20.10+（使用 Docker 运行时）
-  - Kubernetes 1.22.4+（使用 Kubernetes 运行时）
+  - Kubernetes 1.21.1+（使用 Kubernetes 运行时）
 - **操作系统**：Linux、macOS 或带 WSL2 的 Windows
 
 ## 快速开始
@@ -157,6 +157,46 @@ curl -H "OPEN-SANDBOX-API-KEY: your-secret-api-key" \
    更多 Docker 容器安全参考：https://docs.docker.com/engine/security/
 
 常见问题及解决方案请参阅 [故障排查](TROUBLESHOOTING_zh.md)。
+
+**安全容器运行时（可选）**
+
+OpenSandbox 支持安全容器运行时以增强隔离性：
+
+```toml
+[secure_runtime]
+type = "gvisor"              # 选项: "", "gvisor", "kata", "firecracker"
+docker_runtime = "runsc"      # Docker OCI 运行时名称（用于 gVisor、Kata）
+# k8s_runtime_class = "gvisor"  # Kubernetes RuntimeClass 名称（用于 K8s）
+```
+
+- `type=""`（默认）：不使用安全运行时，使用 runc
+- `type="gvisor"`：使用 gVisor (runsc) 实现用户态内核隔离
+- `type="kata"`：使用 Kata Containers 实现 VM 级隔离
+- `type="firecracker"`：使用 Firecracker 微虚拟机（仅 Kubernetes）
+
+> **详细指南**：参阅 [安全容器运行时指南](../docs/secure-container.md) 获取完整的安装说明、系统要求和故障排除。
+
+**Docker daemon 配置** gVisor 示例：
+```json
+{
+  "runtimes": {
+    "runsc": {
+      "path": "/usr/bin/runsc"
+    }
+  }
+}
+```
+
+**Kubernetes 配置**：使用前需先创建 RuntimeClass：
+```bash
+kubectl create -f - <<EOF
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: gvisor
+handler: runsc
+EOF
+```
 
 **Ingress 暴露（direct | gateway）**
 ```toml
@@ -426,6 +466,7 @@ curl -X DELETE \
 | `server.port` | integer | `8080` | 监听端口 |
 | `server.log_level` | string | `"INFO"` | Python 日志级别 |
 | `server.api_key` | string | `null` | API 认证密钥 |
+| `server.eip` | string | `null` | 绑定的公网 IP；配置后，返回 sandbox endpoint 时作为地址的 host 部分（Docker 运行时） |
 
 ### 运行时配置
 

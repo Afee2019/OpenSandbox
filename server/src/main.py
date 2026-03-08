@@ -38,8 +38,15 @@ app_config = load_config()
 
 # Unify logging format (including uvicorn access/error logs) with timestamp prefix.
 _log_config = copy.deepcopy(UVICORN_LOGGING_CONFIG)
-_fmt = "%(levelprefix)s %(asctime)s %(name)s: %(message)s"
+_fmt = "%(levelprefix)s %(asctime)s [%(request_id)s] %(name)s: %(message)s"
 _datefmt = "%Y-%m-%d %H:%M:%S%z"
+
+# Inject request_id into log records so one request's logs can be correlated.
+_log_config["filters"] = {
+    "request_id": {"()": "src.middleware.request_id.RequestIdFilter"},
+}
+_log_config["handlers"]["default"]["filters"] = ["request_id"]
+_log_config["handlers"]["access"]["filters"] = ["request_id"]
 
 # Enable colors and set format for both default and access loggers
 _log_config["formatters"]["default"]["fmt"] = _fmt
@@ -64,11 +71,49 @@ logging.getLogger().setLevel(
 
 from src.api.lifecycle import router  # noqa: E402
 from src.middleware.auth import AuthMiddleware  # noqa: E402
+from src.middleware.request_id import RequestIdMiddleware  # noqa: E402
+from src.services.runtime_resolver import (  # noqa: E402
+    validate_secure_runtime_on_startup,
+)
 
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.http_client = httpx.AsyncClient(timeout=180.0)
+
+    # Validate secure runtime configuration at startup
+    try:
+        # Determine which runtime client to create based on config
+        docker_client = None
+        k8s_client = None
+        runtime_type = app_config.runtime.type
+
+        if runtime_type == "docker":
+            import docker
+
+            docker_client = docker.from_env()
+            logger.info("Validating secure runtime for Docker backend")
+        elif runtime_type == "kubernetes":
+            from src.services.k8s.client import K8sClient
+
+            k8s_client = K8sClient(app_config.kubernetes)
+            logger.info("Validating secure runtime for Kubernetes backend")
+
+        await validate_secure_runtime_on_startup(
+            app_config,
+            docker_client=docker_client,
+            k8s_client=k8s_client,
+        )
+
+        # Create sandbox service after validation
+        from src.services.factory import create_sandbox_service
+
+        app.state.sandbox_service = create_sandbox_service()
+    except Exception as exc:
+        logger.error("Secure runtime validation failed: %s", exc)
+        raise
+
     yield
     await app.state.http_client.aclose()
 
@@ -84,20 +129,22 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Add CORS middleware
+# Attach global config for runtime access
+app.state.config = app_config
+
+# Middleware run in reverse order of addition: last added = first to run (outermost).
+# Add auth and CORS first so they run after RequestIdMiddleware.
+app.add_middleware(AuthMiddleware, config=app_config)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 当前环境默认放开所有来源，生产部署需按配置收敛
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Attach global config for runtime access
-app.state.config = app_config
-
-# Add authentication middleware
-app.add_middleware(AuthMiddleware, config=app_config)
+# RequestIdMiddleware last = outermost: runs first, so every response (including
+# 401 from AuthMiddleware) gets X-Request-ID and logs have request_id in context.
+app.add_middleware(RequestIdMiddleware)
 
 # Include API routes at root and versioned prefix
 app.include_router(router)

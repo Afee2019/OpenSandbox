@@ -24,6 +24,7 @@ import pytest
 from kubernetes.client import ApiException
 
 from src.api.schema import ImageSpec, NetworkPolicy, NetworkRule
+from src.config import ExecdInitResources
 from src.services.k8s.agent_sandbox_provider import AgentSandboxProvider
 
 
@@ -83,6 +84,47 @@ class TestAgentSandboxProvider:
         assert "containers" in body["spec"]["podTemplate"]["spec"]
         assert "volumes" in body["spec"]["podTemplate"]["spec"]
 
+    def test_create_workload_sanitizes_resource_name(self, mock_k8s_client):
+        """
+        Test case: Ensure sandbox names are DNS-1035 compliant when IDs start with digits
+        """
+        provider = AgentSandboxProvider(mock_k8s_client)
+        mock_api = mock_k8s_client.get_custom_objects_api()
+        mock_api.create_namespaced_custom_object.return_value = {
+            "metadata": {"name": "sandbox-1234", "uid": "test-uid"}
+        }
+
+        expires_at = datetime(2025, 12, 31, 10, 0, 0, tzinfo=timezone.utc)
+
+        result = provider.create_workload(
+            sandbox_id="1234",
+            namespace="test-ns",
+            image_spec=ImageSpec(uri="python:3.11"),
+            entrypoint=["/bin/bash"],
+            env={"FOO": "bar"},
+            resource_limits={"cpu": "1", "memory": "1Gi"},
+            labels={"opensandbox.io/id": "1234"},
+            expires_at=expires_at,
+            execd_image="execd:latest",
+        )
+
+        assert result == {"name": "sandbox-1234", "uid": "test-uid"}
+        body = mock_api.create_namespaced_custom_object.call_args.kwargs["body"]
+        assert body["metadata"]["name"] == "sandbox-1234"
+
+    def test_resource_name_uses_hash_when_id_has_no_alnum(self, mock_k8s_client):
+        """
+        Test case: Ensure symbol-only sandbox ids do not collapse to the same name
+        """
+        provider = AgentSandboxProvider(mock_k8s_client)
+
+        first = provider._resource_name("!!!")
+        second = provider._resource_name("???")
+
+        assert first.startswith("sandbox-")
+        assert second.startswith("sandbox-")
+        assert first != second
+
     def test_get_workload_returns_none_on_404(self, mock_k8s_client):
         """
         Test case: Verify None returned on 404 exception
@@ -97,6 +139,23 @@ class TestAgentSandboxProvider:
         result = provider.get_workload("test-id", "test-ns")
 
         assert result is None
+
+    def test_get_workload_prefers_sanitized_name(self, mock_k8s_client):
+        """
+        Test case: Ensure DNS-1035 resource name is tried before raw id
+        """
+        provider = AgentSandboxProvider(mock_k8s_client)
+        mock_api = mock_k8s_client.get_custom_objects_api()
+        mock_api.get_namespaced_custom_object.side_effect = [
+            ApiException(status=404),
+            {"metadata": {"name": "1234"}},
+        ]
+
+        result = provider.get_workload("1234", "test-ns")
+
+        assert result["metadata"]["name"] == "1234"
+        assert mock_api.get_namespaced_custom_object.call_args_list[0].kwargs["name"] == "sandbox-1234"
+        assert mock_api.get_namespaced_custom_object.call_args_list[1].kwargs["name"] == "1234"
 
     def test_get_workload_falls_back_to_legacy_name(self, mock_k8s_client):
         """
@@ -316,7 +375,7 @@ class TestAgentSandboxProvider:
 
     def test_get_status_falls_back_to_pod_state(self, mock_k8s_client):
         """
-        Test case: Verify status fallback uses pod selector state
+        Test case: Verify status fallback uses pod selector state (Running + IP = Running)
         """
         provider = AgentSandboxProvider(mock_k8s_client)
         core_api = mock_k8s_client.get_core_v1_api()
@@ -336,6 +395,29 @@ class TestAgentSandboxProvider:
 
         assert result["state"] == "Running"
         assert result["reason"] == "POD_READY"
+
+    def test_get_status_falls_back_to_allocated_when_ip_assigned_not_running(self, mock_k8s_client):
+        """
+        Test case: Verify Allocated state when Pod has IP but is not Running yet
+        """
+        provider = AgentSandboxProvider(mock_k8s_client)
+        core_api = mock_k8s_client.get_core_v1_api()
+        core_api.list_namespaced_pod.return_value = MagicMock(
+            items=[
+                SimpleNamespace(
+                    status=SimpleNamespace(phase="Pending", pod_ip="10.0.0.2")
+                )
+            ]
+        )
+        workload = {
+            "status": {"conditions": [], "selector": "app=sandbox"},
+            "metadata": {"creationTimestamp": "2025-12-31T09:00:00Z", "namespace": "test-ns"},
+        }
+
+        result = provider.get_status(workload)
+
+        assert result["state"] == "Allocated"
+        assert result["reason"] == "IP_ASSIGNED"
 
     def test_get_endpoint_info_prefers_running_pod(self, mock_k8s_client):
         """
@@ -376,6 +458,70 @@ class TestAgentSandboxProvider:
 
         assert endpoint.endpoint == "svc.example.com:9000"
         assert endpoint.headers is None
+
+
+class TestAgentSandboxProviderExecdInit:
+    """AgentSandboxProvider execd init container resource tests"""
+
+    def test_init_container_has_no_resources_when_not_configured(self, mock_k8s_client):
+        """
+        Test case: Verify init container has no resources when execd_init_resources is not set
+        """
+        provider = AgentSandboxProvider(mock_k8s_client)
+        mock_api = mock_k8s_client.get_custom_objects_api()
+        mock_api.create_namespaced_custom_object.return_value = {
+            "metadata": {"name": "test-id", "uid": "test-uid"}
+        }
+
+        provider.create_workload(
+            sandbox_id="test-id",
+            namespace="test-ns",
+            image_spec=ImageSpec(uri="python:3.11"),
+            entrypoint=["/bin/bash"],
+            env={},
+            resource_limits={},
+            labels={},
+            expires_at=datetime(2025, 12, 31, 10, 0, 0, tzinfo=timezone.utc),
+            execd_image="execd:latest",
+        )
+
+        body = mock_api.create_namespaced_custom_object.call_args.kwargs["body"]
+        init_containers = body["spec"]["podTemplate"]["spec"]["initContainers"]
+        assert len(init_containers) == 1
+        assert "resources" not in init_containers[0]
+
+    def test_init_container_has_resources_when_configured(self, mock_k8s_client):
+        """
+        Test case: Verify init container applies resources when execd_init_resources is set
+        """
+        provider = AgentSandboxProvider(
+            mock_k8s_client,
+            execd_init_resources=ExecdInitResources(
+                limits={"cpu": "100m", "memory": "128Mi"},
+                requests={"cpu": "50m", "memory": "64Mi"},
+            ),
+        )
+        mock_api = mock_k8s_client.get_custom_objects_api()
+        mock_api.create_namespaced_custom_object.return_value = {
+            "metadata": {"name": "test-id", "uid": "test-uid"}
+        }
+
+        provider.create_workload(
+            sandbox_id="test-id",
+            namespace="test-ns",
+            image_spec=ImageSpec(uri="python:3.11"),
+            entrypoint=["/bin/bash"],
+            env={},
+            resource_limits={},
+            labels={},
+            expires_at=datetime(2025, 12, 31, 10, 0, 0, tzinfo=timezone.utc),
+            execd_image="execd:latest",
+        )
+
+        body = mock_api.create_namespaced_custom_object.call_args.kwargs["body"]
+        init_containers = body["spec"]["podTemplate"]["spec"]["initContainers"]
+        assert init_containers[0]["resources"]["limits"] == {"cpu": "100m", "memory": "128Mi"}
+        assert init_containers[0]["resources"]["requests"] == {"cpu": "50m", "memory": "64Mi"}
 
 
 class TestAgentSandboxProviderEgress:

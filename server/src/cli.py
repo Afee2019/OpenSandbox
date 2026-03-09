@@ -201,12 +201,12 @@ def main() -> None:
         try:
             if args.example:
                 dest = copy_example_config(args.path, force=args.force, kind=args.example)
-                print(f"Wrote example config ({args.example}) to {dest}\n")
+                print(f"已将示例配置（{args.example}）写入：{dest}\n")
             else:
                 dest = render_full_config(args.path, force=args.force)
-                print(f"Wrote full config skeleton to {dest}\n")
+                print(f"已将完整配置骨架写入：{dest}\n")
         except Exception as exc:  # noqa: BLE001
-            print(f"Failed to write config template: {exc}\n")
+            print(f"写入配置模板失败：{exc}\n")
             raise SystemExit(1)
         return
 

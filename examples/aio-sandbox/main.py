@@ -48,7 +48,7 @@ def check_aio_process(sbx: SandboxSync) -> bool:
                 resp = requests.get(url, timeout=1)
                 if resp.status_code == 200:
                     elapsed = time.perf_counter() - start
-                    print(f"[check] sandbox ready after {elapsed:.1f}s")
+                    print(f"[检查] 沙箱就绪，耗时 {elapsed:.1f}s")
                     return True
             except Exception as exc:
                 # print(f"[check] aio sandbox check health failed: {exc}")
@@ -56,7 +56,7 @@ def check_aio_process(sbx: SandboxSync) -> bool:
             time.sleep(0.2)
         return False
     except Exception as exc:
-        print(f"[check] failed: {exc}")
+        print(f"[检查] 失败：{exc}")
         return False
 
 
@@ -65,7 +65,7 @@ def main() -> None:
     image = "ghcr.io/agent-infra/sandbox:latest"
     timeout_seconds = 300
 
-    print(f"Creating AIO sandbox with image={image} on OpenSandbox server {server}...")
+    print(f"正在创建 AIO 沙箱，镜像={image}，OpenSandbox Server={server}...")
     sandbox = SandboxSync.create(
         image=image,
         timeout=timedelta(seconds=timeout_seconds),
@@ -77,7 +77,7 @@ def main() -> None:
 
     with sandbox:
         endpoint = sandbox.get_endpoint(8080)
-        print(f"AIO portal endpoint: {endpoint.endpoint}")
+        print(f"AIO 访问地址：{endpoint.endpoint}")
 
         client = AioSandboxClient(base_url=f"http://{endpoint.endpoint}")
         home_dir = client.sandbox.get_context().home_dir
@@ -92,7 +92,7 @@ def main() -> None:
         with open(screenshot_path, "wb") as f:
             for chunk in client.browser.screenshot():
                 f.write(chunk)
-        print(f"Screenshot saved to {screenshot_path}")
+        print(f"截图已保存至：{screenshot_path}")
 
         # kill sandbox finally
         sandbox.kill()

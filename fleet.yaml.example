@@ -1,0 +1,86 @@
+# fleet.yaml — jcdo Bot 军团声明文件
+#
+# 使用方法：
+#   1. 复制此文件: cp fleet.yaml.example fleet.yaml
+#   2. 设置环境变量（JCLink Bot Token 等）
+#   3. 启动军团: uv run python -m orchestrator.cli up fleet.yaml
+#
+# 环境变量:
+#   JCLINK_BOT_TOKEN_CODER   — 编码专家的 JCLink Bot Token
+#   JCLINK_BOT_TOKEN_GENERAL — 通用助手的 JCLink Bot Token
+
+apiVersion: jcsandbox/v1
+kind: Fleet
+
+# 全局默认值
+defaults:
+  image: jcdo:local                           # jcdo Docker 镜像
+  timeout: 3600                               # 沙箱 TTL（秒），到期自动续期
+  sandbox_server: http://localhost:8310        # OpenSandbox Server 地址
+  jclink_base_url: http://101.200.166.189:8306  # JCLink Server 地址
+
+# 网络策略模板（支持 extends 继承）
+network_policies:
+  # 基础 LLM API 出口
+  base_llm:
+    defaultAction: deny
+    egress:
+      - { action: allow, target: "api.deepseek.com" }
+      - { action: allow, target: "dashscope.aliyuncs.com" }
+      - { action: allow, target: "api.anthropic.com" }
+
+  # 包含 JCLink 通信
+  with_jclink:
+    extends: base_llm
+    egress:
+      - { action: allow, target: "101.200.166.189" }
+
+  # 包含工具类 API
+  with_tools:
+    extends: with_jclink
+    egress:
+      - { action: allow, target: "api.tavily.com" }
+      - { action: allow, target: "api.github.com" }
+      - { action: allow, target: "*.npmjs.org" }
+
+# Bot 部署声明
+deployments:
+  - name: coding-expert
+    replicas: 1
+    network_policy: with_tools
+    template:
+      agent:
+        id: coding-expert
+        model: claude-sonnet-4-6
+        identity:
+          name: "编码专家"
+        skills:
+          - coding-agent
+          - github
+      jclink:
+        token: "${JCLINK_BOT_TOKEN_CODER}"
+        group_policy: open
+
+  - name: general-assistant
+    replicas: 1
+    network_policy: with_jclink
+    template:
+      agent:
+        id: general
+        model: deepseek/deepseek-chat
+        identity:
+          name: "通用助手"
+        skills:
+          - weather
+          - greeting
+          - tavily-search
+      jclink:
+        token: "${JCLINK_BOT_TOKEN_GENERAL}"
+        group_policy: open
+
+# 健康检查配置
+health:
+  startup_timeout: 90       # jcdo 启动超时（秒），镜像大时适当加长
+  check_interval: 30        # 健康检查间隔（秒）
+  liveness_failures: 3      # 连续失败 N 次判定死亡并替换
+  readiness_endpoint: /health

@@ -81,7 +81,7 @@ def _format_execution(execution) -> str:
 
 
 async def create_sandbox(state: WorkflowState) -> WorkflowState:
-    print("[create] Creating sandbox")
+    print("[创建] 正在创建沙箱")
     domain = os.getenv("SANDBOX_DOMAIN", "localhost:8080")
     api_key = os.getenv("SANDBOX_API_KEY")
     image = os.getenv(
@@ -100,13 +100,13 @@ async def create_sandbox(state: WorkflowState) -> WorkflowState:
         connection_config=config,
     )
 
-    print(f"[create] Sandbox ready: {sandbox.id}")
+    print(f"[创建] 沙箱就绪：{sandbox.id}")
 
     return {**state, "sandbox": sandbox}
 
 
 async def prepare_workspace(state: WorkflowState) -> WorkflowState:
-    print("[prepare] Writing job files")
+    print("[准备] 正在写入任务文件")
     sandbox = state["sandbox"]
     if sandbox is None:
         raise RuntimeError("Sandbox not initialized")
@@ -120,7 +120,7 @@ async def prepare_workspace(state: WorkflowState) -> WorkflowState:
         "LangGraph + OpenSandbox\n",
     )
 
-    print("[prepare] Files written")
+    print("[准备] 文件已写入")
 
     return state
 
@@ -129,7 +129,7 @@ async def run_job(state: WorkflowState) -> WorkflowState:
     attempt = state["attempt"] + 1
     max_attempts = state["max_attempts"]
     command = state.get("command") or "python3 /tmp/math.py"
-    print(f"[run] Executing job (attempt {attempt}/{max_attempts})")
+    print(f"[执行] 正在运行任务（第 {attempt}/{max_attempts} 次）")
     sandbox = state["sandbox"]
     if sandbox is None:
         raise RuntimeError("Sandbox not initialized")
@@ -143,9 +143,9 @@ async def run_job(state: WorkflowState) -> WorkflowState:
         last_error = f"{execution.error.name}: {execution.error.value}"
         if attempt < max_attempts:
             next_command = state.get("fallback_command", "python /tmp/math.py")
-            print(f"[run] Failed, scheduling fallback: {next_command}")
+            print(f"[执行] 失败，切换备用命令：{next_command}")
 
-    print(f"[run] Output: {run_output}")
+    print(f"[执行] 输出：{run_output}")
 
     return {
         **state,
@@ -158,15 +158,15 @@ async def run_job(state: WorkflowState) -> WorkflowState:
 
 def decide_next(state: WorkflowState) -> str:
     if state.get("last_error") and state["attempt"] < state["max_attempts"]:
-        print("[decide] Retry with fallback command")
+        print("[决策] 使用备用命令重试")
         return "run"
 
-    print("[decide] Proceeding to inspect")
+    print("[决策] 进入结果检查")
     return "inspect"
 
 
 async def inspect_results(state: WorkflowState) -> WorkflowState:
-    print("[inspect] Reading notes and summarizing")
+    print("[检查] 正在读取记录并生成摘要")
     sandbox = state["sandbox"]
     if sandbox is None:
         raise RuntimeError("Sandbox not initialized")
@@ -180,19 +180,19 @@ async def inspect_results(state: WorkflowState) -> WorkflowState:
     )
     response = await llm.ainvoke(prompt)
 
-    print(f"[inspect] Summary: {response.content}")
+    print(f"[检查] 摘要：{response.content}")
 
     return {**state, "summary": response.content}
 
 
 async def cleanup_sandbox(state: WorkflowState) -> WorkflowState:
-    print("[cleanup] Cleaning up sandbox")
+    print("[清理] 正在销毁沙箱")
     sandbox = state.get("sandbox")
     if sandbox is not None:
         await sandbox.kill()
         await sandbox.close()
 
-    print("[cleanup] Done")
+    print("[清理] 完成")
 
     return {**state, "sandbox": None, "cleaned": True}
 
@@ -242,8 +242,8 @@ async def main() -> None:
                 await sandbox.kill()
                 await sandbox.close()
 
-    print(f"Run output: {state['run_output']}")
-    print(f"Summary: {state['summary']}")
+    print(f"执行输出：{state['run_output']}")
+    print(f"摘要：{state['summary']}")
 
 
 if __name__ == "__main__":

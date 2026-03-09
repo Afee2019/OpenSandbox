@@ -71,14 +71,14 @@ async def main() -> None:
         await _print_logs("code-server", start_exec)
 
         endpoint = await sandbox.get_endpoint(code_port)
-        print("\nVS Code Web endpoint:")
+        print("\nVS Code Web 访问地址：")
         print(f"  http://{endpoint.endpoint}/")
 
-        print("\nKeeping sandbox alive for 10 minutes. Press Ctrl+C to exit sooner.")
+        print("\n沙箱将保持运行 10 分钟，按 Ctrl+C 可提前退出。")
         try:
             await asyncio.sleep(600)
         except KeyboardInterrupt:
-            print("Stopping...")
+            print("正在停止...")
         finally:
             await sandbox.kill()
 

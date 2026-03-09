@@ -46,13 +46,13 @@ try:
     from opensandbox.models.sandboxes import Host, Volume
 except ImportError:
     print(
-        "ERROR: Your installed opensandbox SDK does not include Volume/Host models.\n"
-        "       Volume support requires the latest SDK from source.\n"
-        "       Please install from the local repository:\n"
+        "错误：当前安装的 opensandbox SDK 不包含 Volume/Host 模型。\n"
+        "       Volume 支持需要使用源码中的最新 SDK。\n"
+        "       请从本地仓库安装：\n"
         "\n"
         "           pip install -e sdks/sandbox/python\n"
         "\n"
-        "       See README.md for details."
+        "       详见 README.md。"
     )
     raise SystemExit(1)
 
@@ -61,7 +61,7 @@ async def print_exec(sandbox: Sandbox, command: str) -> str | None:
     """Run a command in the sandbox and print/return stdout."""
     result = await sandbox.commands.run(command)
     if result.error:
-        print(f"  [error] {result.error.name}: {result.error.value}")
+        print(f"  [错误] {result.error.name}: {result.error.value}")
         return None
     text = "\n".join(msg.text for msg in result.logs.stdout)
     if text:
@@ -77,10 +77,10 @@ async def demo_readwrite_mount(config: ConnectionConfig, image: str, host_dir: s
     inside the sandbox, then verify it appears on the host.
     """
     print("\n" + "=" * 60)
-    print("Scenario 1: Read-Write Host Volume Mount")
+    print("场景一：宿主机目录读写挂载")
     print("=" * 60)
-    print(f"  Host path : {host_dir}")
-    print(f"  Mount path: /mnt/shared")
+    print(f"  宿主机路径：{host_dir}")
+    print(f"  挂载路径  ：/mnt/shared")
 
     sandbox = await Sandbox.create(
         image=image,
@@ -99,33 +99,33 @@ async def demo_readwrite_mount(config: ConnectionConfig, image: str, host_dir: s
     async with sandbox:
         try:
             # Read existing files from host
-            print("\n  [1] Listing files visible from inside the sandbox:")
+            print("\n  [1] 列出沙箱内可见的文件：")
             await print_exec(sandbox, "ls -la /mnt/shared/")
 
             # Write a file from inside the sandbox
-            print("\n  [2] Writing a file from inside the sandbox:")
+            print("\n  [2] 在沙箱内写入文件：")
             await print_exec(
                 sandbox,
                 "echo 'Hello from sandbox!' > /mnt/shared/sandbox-greeting.txt",
             )
-            print("  -> Written: /mnt/shared/sandbox-greeting.txt")
+            print("  -> 已写入：/mnt/shared/sandbox-greeting.txt")
 
             # Verify the file content
-            print("\n  [3] Reading back the file:")
+            print("\n  [3] 读取刚写入的文件：")
             await print_exec(sandbox, "cat /mnt/shared/sandbox-greeting.txt")
 
             # Check host-side: the file should now exist on the host
             host_file = Path(host_dir) / "sandbox-greeting.txt"
             if host_file.exists():
-                print(f"\n  [4] Verified on host: {host_file}")
-                print(f"      Content: {host_file.read_text().strip()}")
+                print(f"\n  [4] 宿主机验证：{host_file}")
+                print(f"      内容：{host_file.read_text().strip()}")
             else:
-                print(f"\n  [4] Note: {host_file} not directly visible (expected on remote Docker)")
+                print(f"\n  [4] 提示：{host_file} 在远程 Docker 下无法直接可见（符合预期）")
 
         finally:
             await sandbox.kill()
 
-    print("\n  Scenario 1 completed.")
+    print("\n  场景一完成。")
 
 
 async def demo_readonly_mount(config: ConnectionConfig, image: str, host_dir: str) -> None:
@@ -136,10 +136,10 @@ async def demo_readonly_mount(config: ConnectionConfig, image: str, host_dir: st
     are rejected by the container runtime.
     """
     print("\n" + "=" * 60)
-    print("Scenario 2: Read-Only Host Volume Mount")
+    print("场景二：宿主机目录只读挂载")
     print("=" * 60)
-    print(f"  Host path : {host_dir}")
-    print(f"  Mount path: /mnt/readonly")
+    print(f"  宿主机路径：{host_dir}")
+    print(f"  挂载路径  ：/mnt/readonly")
 
     sandbox = await Sandbox.create(
         image=image,
@@ -158,15 +158,15 @@ async def demo_readonly_mount(config: ConnectionConfig, image: str, host_dir: st
     async with sandbox:
         try:
             # Read existing files
-            print("\n  [1] Reading files from read-only mount:")
+            print("\n  [1] 读取只读挂载目录中的文件：")
             await print_exec(sandbox, "ls -la /mnt/readonly/")
 
             # Read the marker file
-            print("\n  [2] Reading marker.txt:")
+            print("\n  [2] 读取 marker.txt：")
             await print_exec(sandbox, "cat /mnt/readonly/marker.txt")
 
             # Attempt to write (should fail)
-            print("\n  [3] Attempting to write (should fail):")
+            print("\n  [3] 尝试写入（应当失败）：")
             result = await sandbox.commands.run(
                 "touch /mnt/readonly/should-fail.txt 2>&1 || echo 'Write denied (expected)'"
             )
@@ -178,7 +178,7 @@ async def demo_readonly_mount(config: ConnectionConfig, image: str, host_dir: st
         finally:
             await sandbox.kill()
 
-    print("\n  Scenario 2 completed.")
+    print("\n  场景二完成。")
 
 
 async def demo_subpath_mount(config: ConnectionConfig, image: str, host_dir: str) -> None:
@@ -190,7 +190,7 @@ async def demo_subpath_mount(config: ConnectionConfig, image: str, host_dir: str
     want to expose only one of them.
     """
     print("\n" + "=" * 60)
-    print("Scenario 3: SubPath Host Volume Mount")
+    print("场景三：宿主机目录子路径挂载")
     print("=" * 60)
 
     # Ensure subdirectory exists on host
@@ -198,9 +198,9 @@ async def demo_subpath_mount(config: ConnectionConfig, image: str, host_dir: str
     sub_dir.mkdir(parents=True, exist_ok=True)
     (sub_dir / "data.csv").write_text("id,value\n1,100\n2,200\n3,300\n")
 
-    print(f"  Host path : {host_dir}")
-    print(f"  SubPath   : datasets/train")
-    print(f"  Mount path: /mnt/training-data")
+    print(f"  宿主机路径：{host_dir}")
+    print(f"  子路径    ：datasets/train")
+    print(f"  挂载路径  ：/mnt/training-data")
 
     sandbox = await Sandbox.create(
         image=image,
@@ -220,17 +220,17 @@ async def demo_subpath_mount(config: ConnectionConfig, image: str, host_dir: str
     async with sandbox:
         try:
             # List the mounted subdirectory
-            print("\n  [1] Listing mounted subpath content:")
+            print("\n  [1] 列出子路径挂载内容：")
             await print_exec(sandbox, "ls -la /mnt/training-data/")
 
             # Read the CSV data
-            print("\n  [2] Reading data.csv:")
+            print("\n  [2] 读取 data.csv：")
             await print_exec(sandbox, "cat /mnt/training-data/data.csv")
 
         finally:
             await sandbox.kill()
 
-    print("\n  Scenario 3 completed.")
+    print("\n  场景三完成。")
 
 
 async def main() -> None:
@@ -242,12 +242,12 @@ async def main() -> None:
     # If no host path specified, create a temporary directory with sample data
     if not host_dir:
         host_dir = tempfile.mkdtemp(prefix="opensandbox-vol-")
-        print(f"No HOST_VOLUME_PATH set, using temporary directory: {host_dir}")
+        print(f"未设置 HOST_VOLUME_PATH，使用临时目录：{host_dir}")
         marker = Path(host_dir) / "marker.txt"
         marker.write_text("hello-from-host\n")
-        print(f"Created marker file: {marker}")
+        print(f"已创建标记文件：{marker}")
     else:
-        print(f"Using HOST_VOLUME_PATH: {host_dir}")
+        print(f"使用 HOST_VOLUME_PATH：{host_dir}")
 
     config = ConnectionConfig(
         domain=domain,
@@ -255,16 +255,16 @@ async def main() -> None:
         request_timeout=timedelta(minutes=3),
     )
 
-    print(f"\nOpenSandbox server : {config.domain}")
-    print(f"Sandbox image      : {image}")
-    print(f"Host volume path   : {host_dir}")
+    print(f"\nOpenSandbox 服务器：{config.domain}")
+    print(f"沙箱镜像          ：{image}")
+    print(f"宿主机挂载路径     ：{host_dir}")
 
     await demo_readwrite_mount(config, image, host_dir)
     await demo_readonly_mount(config, image, host_dir)
     await demo_subpath_mount(config, image, host_dir)
 
     print("\n" + "=" * 60)
-    print("All scenarios completed successfully!")
+    print("所有场景均已成功完成！")
     print("=" * 60)
 
 

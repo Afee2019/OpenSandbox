@@ -47,13 +47,13 @@ try:
     from opensandbox.models.sandboxes import PVC, Volume
 except ImportError:
     print(
-        "ERROR: Your installed opensandbox SDK does not include Volume/PVC models.\n"
-        "       Volume support requires the latest SDK from source.\n"
-        "       Please install from the local repository:\n"
+        "错误：当前安装的 opensandbox SDK 不包含 Volume/PVC 模型。\n"
+        "       Volume 支持需要使用源码中的最新 SDK。\n"
+        "       请从本地仓库安装：\n"
         "\n"
         "           pip install -e sdks/sandbox/python\n"
         "\n"
-        "       See README.md for details."
+        "       详见 README.md。"
     )
     raise SystemExit(1)
 
@@ -65,7 +65,7 @@ async def print_exec(sandbox: Sandbox, command: str) -> str | None:
     """Run a command in the sandbox and print/return stdout."""
     result = await sandbox.commands.run(command)
     if result.error:
-        print(f"  [error] {result.error.name}: {result.error.value}")
+        print(f"  [错误] {result.error.name}: {result.error.value}")
         return None
     text = "\n".join(msg.text for msg in result.logs.stdout)
     if text:
@@ -75,7 +75,7 @@ async def print_exec(sandbox: Sandbox, command: str) -> str | None:
 
 def ensure_named_volume() -> None:
     """Create the Docker named volume and seed it with test data."""
-    print(f"  Ensuring Docker named volume '{VOLUME_NAME}' exists...")
+    print(f"  正在确认 Docker 命名卷 '{VOLUME_NAME}' 存在...")
     subprocess.run(
         ["docker", "volume", "rm", VOLUME_NAME],
         capture_output=True,
@@ -101,7 +101,7 @@ def ensure_named_volume() -> None:
         check=True,
         capture_output=True,
     )
-    print(f"  Created volume '{VOLUME_NAME}' with marker.txt and datasets/train/")
+    print(f"  已创建卷 '{VOLUME_NAME}'（包含 marker.txt 和 datasets/train/）")
 
 
 async def demo_readwrite_mount(config: ConnectionConfig, image: str) -> None:
@@ -112,10 +112,10 @@ async def demo_readwrite_mount(config: ConnectionConfig, image: str) -> None:
     Write a file inside the sandbox, then read it back to verify.
     """
     print("\n" + "=" * 60)
-    print("Scenario 1: Read-Write PVC (Named Volume) Mount")
+    print("场景一：PVC（命名卷）读写挂载")
     print("=" * 60)
-    print(f"  Volume name: {VOLUME_NAME}")
-    print(f"  Mount path : /mnt/data")
+    print(f"  卷名称    ：{VOLUME_NAME}")
+    print(f"  挂载路径  ：/mnt/data")
 
     sandbox = await Sandbox.create(
         image=image,
@@ -134,29 +134,29 @@ async def demo_readwrite_mount(config: ConnectionConfig, image: str) -> None:
     async with sandbox:
         try:
             # Read the seeded marker file
-            print("\n  [1] Reading marker file from named volume:")
+            print("\n  [1] 读取命名卷中的标记文件：")
             await print_exec(sandbox, "cat /mnt/data/marker.txt")
 
             # Write a new file
-            print("\n  [2] Writing a file from inside the sandbox:")
+            print("\n  [2] 在沙箱内写入文件：")
             await print_exec(
                 sandbox,
                 "echo 'written-by-sandbox' > /mnt/data/sandbox-output.txt",
             )
-            print("  -> Written: /mnt/data/sandbox-output.txt")
+            print("  -> 已写入：/mnt/data/sandbox-output.txt")
 
             # Read it back
-            print("\n  [3] Reading back the written file:")
+            print("\n  [3] 读取刚写入的文件：")
             await print_exec(sandbox, "cat /mnt/data/sandbox-output.txt")
 
             # List all files
-            print("\n  [4] Listing volume contents:")
+            print("\n  [4] 列出卷内容：")
             await print_exec(sandbox, "ls -la /mnt/data/")
 
         finally:
             await sandbox.kill()
 
-    print("\n  Scenario 1 completed.")
+    print("\n  场景一完成。")
 
 
 async def demo_readonly_mount(config: ConnectionConfig, image: str) -> None:
@@ -167,10 +167,10 @@ async def demo_readonly_mount(config: ConnectionConfig, image: str) -> None:
     writes are rejected by the container runtime.
     """
     print("\n" + "=" * 60)
-    print("Scenario 2: Read-Only PVC (Named Volume) Mount")
+    print("场景二：PVC（命名卷）只读挂载")
     print("=" * 60)
-    print(f"  Volume name: {VOLUME_NAME}")
-    print(f"  Mount path : /mnt/readonly")
+    print(f"  卷名称    ：{VOLUME_NAME}")
+    print(f"  挂载路径  ：/mnt/readonly")
 
     sandbox = await Sandbox.create(
         image=image,
@@ -189,11 +189,11 @@ async def demo_readonly_mount(config: ConnectionConfig, image: str) -> None:
     async with sandbox:
         try:
             # Read the marker file
-            print("\n  [1] Reading marker.txt from read-only mount:")
+            print("\n  [1] 从只读挂载读取 marker.txt：")
             await print_exec(sandbox, "cat /mnt/readonly/marker.txt")
 
             # Attempt to write (should fail)
-            print("\n  [2] Attempting to write (should fail):")
+            print("\n  [2] 尝试写入（应当失败）：")
             result = await sandbox.commands.run(
                 "touch /mnt/readonly/should-fail.txt 2>&1 || echo 'Write denied (expected)'"
             )
@@ -205,7 +205,7 @@ async def demo_readonly_mount(config: ConnectionConfig, image: str) -> None:
         finally:
             await sandbox.kill()
 
-    print("\n  Scenario 2 completed.")
+    print("\n  场景二完成。")
 
 
 async def demo_cross_sandbox_sharing(config: ConnectionConfig, image: str) -> None:
@@ -217,9 +217,9 @@ async def demo_cross_sandbox_sharing(config: ConnectionConfig, image: str) -> No
     path exposure.
     """
     print("\n" + "=" * 60)
-    print("Scenario 3: Cross-Sandbox Sharing via PVC (Named Volume)")
+    print("场景三：通过 PVC（命名卷）实现跨沙箱数据共享")
     print("=" * 60)
-    print(f"  Volume name: {VOLUME_NAME}")
+    print(f"  卷名称：{VOLUME_NAME}")
 
     volume_spec = Volume(
         name="shared-vol",
@@ -229,7 +229,7 @@ async def demo_cross_sandbox_sharing(config: ConnectionConfig, image: str) -> No
     )
 
     # --- Sandbox A: write ---
-    print("\n  [Sandbox A] Creating sandbox and writing data...")
+    print("\n  [沙箱 A] 正在创建沙箱并写入数据...")
     sandbox_a = await Sandbox.create(
         image=image,
         connection_config=config,
@@ -242,12 +242,12 @@ async def demo_cross_sandbox_sharing(config: ConnectionConfig, image: str) -> No
                 sandbox_a,
                 "echo 'message-from-sandbox-a' > /mnt/shared/cross-sandbox.txt",
             )
-            print("  [Sandbox A] Wrote /mnt/shared/cross-sandbox.txt")
+            print("  [沙箱 A] 已写入 /mnt/shared/cross-sandbox.txt")
         finally:
             await sandbox_a.kill()
 
     # --- Sandbox B: read ---
-    print("\n  [Sandbox B] Creating sandbox and reading data...")
+    print("\n  [沙箱 B] 正在创建沙箱并读取数据...")
     sandbox_b = await Sandbox.create(
         image=image,
         connection_config=config,
@@ -256,14 +256,14 @@ async def demo_cross_sandbox_sharing(config: ConnectionConfig, image: str) -> No
     )
     async with sandbox_b:
         try:
-            print("  [Sandbox B] Reading file written by Sandbox A:")
+            print("  [沙箱 B] 正在读取沙箱 A 写入的文件：")
             text = await print_exec(sandbox_b, "cat /mnt/shared/cross-sandbox.txt")
             if text and "message-from-sandbox-a" in text:
-                print("\n  Cross-sandbox data sharing verified!")
+                print("\n  跨沙箱数据共享验证通过！")
         finally:
             await sandbox_b.kill()
 
-    print("\n  Scenario 3 completed.")
+    print("\n  场景三完成。")
 
 
 async def demo_subpath_mount(config: ConnectionConfig, image: str) -> None:
@@ -276,11 +276,11 @@ async def demo_subpath_mount(config: ConnectionConfig, image: str) -> None:
     consistent with Kubernetes PVC subPath semantics.
     """
     print("\n" + "=" * 60)
-    print("Scenario 4: SubPath PVC (Named Volume) Mount")
+    print("场景四：PVC（命名卷）子路径挂载")
     print("=" * 60)
-    print(f"  Volume name: {VOLUME_NAME}")
-    print(f"  SubPath    : datasets/train")
-    print(f"  Mount path : /mnt/training-data")
+    print(f"  卷名称    ：{VOLUME_NAME}")
+    print(f"  子路径    ：datasets/train")
+    print(f"  挂载路径  ：/mnt/training-data")
 
     sandbox = await Sandbox.create(
         image=image,
@@ -300,25 +300,25 @@ async def demo_subpath_mount(config: ConnectionConfig, image: str) -> None:
     async with sandbox:
         try:
             # List contents -- should only show the subpath
-            print("\n  [1] Listing mounted subpath content:")
+            print("\n  [1] 列出子路径挂载内容：")
             await print_exec(sandbox, "ls -la /mnt/training-data/")
 
             # Read the CSV data
-            print("\n  [2] Reading data.csv:")
+            print("\n  [2] 读取 data.csv：")
             await print_exec(sandbox, "cat /mnt/training-data/data.csv")
 
             # Verify the root marker.txt is NOT visible (we're inside datasets/train)
-            print("\n  [3] Verifying volume root is NOT visible:")
+            print("\n  [3] 验证卷根路径不可见：")
             result = await sandbox.commands.run("test -f /mnt/training-data/marker.txt && echo FOUND || echo NOT-FOUND")
             text = "\n".join(msg.text for msg in result.logs.stdout)
-            print(f"  marker.txt at mount root: {text}")
+            print(f"  挂载根路径的 marker.txt：{text}")
             if "NOT-FOUND" in text:
-                print("  -> Confirmed: subPath isolation is working correctly")
+                print("  -> 确认：子路径隔离正常工作")
 
         finally:
             await sandbox.kill()
 
-    print("\n  Scenario 4 completed.")
+    print("\n  场景四完成。")
 
 
 async def main() -> None:
@@ -332,9 +332,9 @@ async def main() -> None:
         request_timeout=timedelta(minutes=3),
     )
 
-    print(f"OpenSandbox server : {config.domain}")
-    print(f"Sandbox image      : {image}")
-    print(f"Docker volume      : {VOLUME_NAME}")
+    print(f"OpenSandbox 服务器：{config.domain}")
+    print(f"沙箱镜像          ：{image}")
+    print(f"Docker 卷名称      ：{VOLUME_NAME}")
 
     # Ensure the named volume exists with seed data
     ensure_named_volume()
@@ -345,7 +345,7 @@ async def main() -> None:
     await demo_subpath_mount(config, image)
 
     print("\n" + "=" * 60)
-    print("All scenarios completed successfully!")
+    print("所有场景均已成功完成！")
     print("=" * 60)
 
 

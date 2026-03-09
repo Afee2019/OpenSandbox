@@ -104,19 +104,19 @@ async def main() -> None:
             f"?host={novnc_host}&port={novnc_port}&path={novnc_path}"
         )
 
-        print("\nVNC endpoint (native clients):")
+        print("\nVNC 端点（原生客户端）：")
         print(f"  {endpoint_vnc.endpoint}")
-        print(f"Password: {vnc_password}")
+        print(f"密码：{vnc_password}")
 
-        print("\nnoVNC (browser):")
+        print("\nnoVNC（浏览器访问）：")
         print(f"  {novnc_url}")
-        print(f"Password: {vnc_password}")
+        print(f"密码：{vnc_password}")
 
-        print("\nKeeping sandbox alive for 5 minutes. Press Ctrl+C to exit sooner.")
+        print("\n沙箱将保持运行 5 分钟，按 Ctrl+C 可提前退出。")
         try:
             await asyncio.sleep(300)
         except KeyboardInterrupt:
-            print("Stopping...")
+            print("正在停止...")
         finally:
             await sandbox.kill()
 

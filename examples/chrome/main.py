@@ -33,19 +33,19 @@ async def main():
 
         # Got execd process endpoint
         execd = await sandbox.get_endpoint(44772)
-        print(f"execd daemon running with {execd.endpoint}")
+        print(f"execd 守护进程已启动，地址：{execd.endpoint}")
 
         vnc = await sandbox.get_endpoint(5901)
-        print(f"VNC running with {vnc.endpoint}")
+        print(f"VNC 已启动，地址：{vnc.endpoint}")
 
         devtools = await sandbox.get_endpoint(9222)
-        print(f"DevTools running with {devtools.endpoint}/json")
+        print(f"DevTools 已启动，地址：{devtools.endpoint}/json")
 
     except SandboxException as e:
         # Handle Sandbox specific exceptions
-        print(f"Sandbox Error: [{e.error.code}] {e.error.message}")
+        print(f"沙箱错误：[{e.error.code}] {e.error.message}")
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"错误：{e}")
 
 if __name__ == "__main__":
     asyncio.run(main())

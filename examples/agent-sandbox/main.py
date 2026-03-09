@@ -40,7 +40,7 @@ async def main() -> None:
     async with sandbox:
         execution = await sandbox.commands.run("echo hello world")
         stdout = execution.logs.stdout[0].text if execution.logs.stdout else ""
-        print(f"command output: {stdout}")
+        print(f"命令输出：{stdout}")
         await sandbox.kill()
 
 

@@ -78,11 +78,11 @@ def _training_script() -> str:
 
 async def _print_execution_logs(execution) -> None:
     for msg in execution.logs.stdout:
-        print(f"[stdout] {msg.text}")
+        print(f"[标准输出] {msg.text}")
     for msg in execution.logs.stderr:
-        print(f"[stderr] {msg.text}")
+        print(f"[标准错误] {msg.text}")
     if execution.error:
-        print(f"[error] {execution.error.name}: {execution.error.value}")
+        print(f"[错误] {execution.error.name}: {execution.error.value}")
 
 
 def _execution_failed(execution) -> bool:
@@ -155,26 +155,26 @@ async def main() -> None:
         try:
             await sandbox.files.write_file("requirements.txt", _load_requirements())
             if not await _ensure_pip(sandbox):
-                print("Failed to bootstrap pip inside the sandbox.")
+                print("沙箱内初始化 pip 失败。")
                 return
 
             if not await _install_requirements(sandbox):
-                print("Failed to install RL dependencies inside the sandbox.")
+                print("沙箱内安装 RL 依赖失败。")
                 return
 
             await sandbox.files.write_file("train.py", _training_script())
             train_exec = await sandbox.commands.run(_with_python_env("python3 train.py"))
             await _print_execution_logs(train_exec)
             if _execution_failed(train_exec):
-                print("Training failed inside the sandbox.")
+                print("沙箱内训练任务失败。")
                 return
 
             try:
                 summary = await sandbox.files.read_file("training_summary.json")
             except Exception as exc:
-                print(f"\nFailed to read training summary: {exc}")
+                print(f"\n读取训练摘要失败：{exc}")
             else:
-                print("\n=== Training summary ===")
+                print("\n=== 训练摘要 ===")
                 print(summary)
         finally:
             await sandbox.kill()
